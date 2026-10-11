@@ -16,3 +16,25 @@ All notable changes to Flint are recorded here. The format follows
 - CI on Windows and Linux through one script, `scripts/ci.ps1`: format,
   Clippy with warnings denied, tests, and a build. Workspace tests keep the
   architecture document, the OS-crate layering and the Fenix pins honest.
+- Flint runs: `flint` starts a resident daemon per user (or shows the
+  running one); `flint toggle`, `show [--query]`, `hide`, `status
+  [--timings]`, `reload` and `quit` drive it from a terminal, a script or
+  a desktop shortcut.
+- The global hotkey, `Alt+Space` by default (`hotkey.toggle`), on Windows
+  and X11. If another app owns the chord, Flint says so in its footer and
+  in `flint status`, and `flint toggle` still works.
+- KDE Plasma on Wayland: bind `flint toggle` to a shortcut, with the
+  activation token passed on so Flint gets focus, and a KWin window rule in
+  `contrib/kde/` ([docs/KDE.md](docs/KDE.md)).
+- The window: a query line, a list (facts about the running Flint until
+  search arrives in M2) and a one-line footer, in Fenix's Orbit Dark
+  colours and monospace font. `Esc` hides it, and so does clicking away.
+- `settings.toml` with `hotkey.toggle`, `appearance.width`,
+  `appearance.rows` and `behaviour.hide_on_blur`; a bad value costs only
+  that setting and is reported in one line
+  ([docs/CONFIGURATION.md](docs/CONFIGURATION.md),
+  [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md)).
+- The timing log: every show is logged with its time from request to first
+  frame, and `flint status --timings` prints the last 100 with p50/p95.
+- A software GPU fallback (WARP, llvmpipe), so Flint starts in VMs and RDP
+  sessions without a usable GPU.

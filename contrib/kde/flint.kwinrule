@@ -1,0 +1,20 @@
+# KWin window rule for Flint on KDE Plasma 6 (Wayland, and X11).
+# Import it in System Settings > Window Management > Window Rules > Import.
+# It matches Flint's app id / WM_CLASS ("flint") and forces:
+#   placement centred, kept above other windows, no task bar or pager entry.
+# Values: wmclassmatch 1 = exact; *rule 2 = force; placement 5 = centred.
+[Flint launcher]
+Description=Flint launcher
+wmclass=flint
+wmclassmatch=1
+types=1
+above=true
+aboverule=2
+skiptaskbar=true
+skiptaskbarrule=2
+skippager=true
+skippagerrule=2
+skipswitcher=true
+skipswitcherrule=2
+placement=5
+placementrule=2

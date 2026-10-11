@@ -11,3 +11,5 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+flint-protocol = { path = "../flint-protocol" }
+serde_json = { workspace = true }

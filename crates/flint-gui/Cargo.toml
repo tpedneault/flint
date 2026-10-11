@@ -11,3 +11,11 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+bytemuck = { workspace = true }
+flint-config = { path = "../flint-config" }
+glyphon = { workspace = true }
+pollster = { workspace = true }
+wgpu = { workspace = true }
+# Undecorated window, so winit's client-side decorations (and the fonts
+# they pull in) aren't needed on Wayland.
+winit = { workspace = true, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
