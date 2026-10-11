@@ -32,7 +32,7 @@ use winit::window::{Window, WindowAttributes, WindowId, WindowLevel};
 
 use crate::gpu::{AdapterSummary, Gpu, Surface};
 use crate::keys;
-use crate::launcher::{FooterLine, Launcher, Outcome, Row};
+use crate::launcher::{Chip, FooterLine, Launcher, Outcome, Row};
 use crate::layout::{self, Layout};
 use crate::render::Renderer;
 use crate::theme::{Palette, ORBIT_DARK};
@@ -74,6 +74,17 @@ pub trait Controller: 'static {
 
     /// A show reached the screen.
     fn shown(&mut self, shown: Shown, ui: &mut Ui<'_>);
+
+    /// The query or its scope changed ([`Ui::query`], [`Ui::scope`]):
+    /// search again and [`Ui::set_rows`]. Called on the event-loop thread
+    /// within the keystroke, so it must answer within the frame budget.
+    fn query_changed(&mut self, ui: &mut Ui<'_>);
+
+    /// `Enter` on row `row`: run its first action.
+    fn activate(&mut self, row: usize, ui: &mut Ui<'_>);
+
+    /// `y` on row `row`: copy its primary text.
+    fn copy(&mut self, row: usize, ui: &mut Ui<'_>);
 }
 
 /// Sends the daemon's events into the event loop from any thread.
@@ -162,9 +173,65 @@ impl Ui<'_> {
         self.state.visible
     }
 
-    /// Replaces the list's rows.
+    /// New results for a new query: the first row selected.
     pub fn set_rows(&mut self, rows: Vec<Row>) {
         self.state.launcher.set_rows(rows);
+        self.state.rows_presented = false;
+        self.state.redraw();
+    }
+
+    /// Results changed without a new query (the daemon has kept the rows
+    /// down to the selection in place): the selection stays.
+    pub fn merge_rows(&mut self, rows: Vec<Row>) {
+        self.state.launcher.merge_rows(rows);
+        self.state.redraw();
+    }
+
+    /// Draws the current state into the hidden window, so the next show
+    /// finds the rows' glyphs rasterised and its frame quick. Does nothing
+    /// while shown, or on Wayland, where a hidden window doesn't exist.
+    pub fn prepare(&mut self) {
+        if !self.state.visible {
+            self.state.draw();
+        }
+    }
+
+    /// Whether the current rows have been on screen, so new results must
+    /// not move them (the stable merge).
+    pub fn rows_presented(&self) -> bool {
+        self.state.rows_presented
+    }
+
+    /// The selected row.
+    pub fn selected(&self) -> usize {
+        self.state.launcher.selected()
+    }
+
+    /// The query text, without the scope.
+    pub fn query(&self) -> &str {
+        self.state.launcher.query()
+    }
+
+    /// The scope chip, if any.
+    pub fn scope(&self) -> Option<&Chip> {
+        self.state.launcher.scope()
+    }
+
+    /// Sets or clears the scope chip.
+    pub fn set_scope(&mut self, scope: Option<Chip>) {
+        self.state.launcher.set_scope(scope);
+        self.state.redraw();
+    }
+
+    /// Replaces the query text.
+    pub fn set_query(&mut self, query: String) {
+        self.state.launcher.set_query(query);
+        self.state.redraw();
+    }
+
+    /// Shows a message in the footer until the next edit or show.
+    pub fn set_message(&mut self, message: FooterLine) {
+        self.state.launcher.set_message(message);
         self.state.redraw();
     }
 
@@ -176,6 +243,8 @@ impl Ui<'_> {
 
     /// Uses new settings (size, rows, hide on blur).
     pub fn apply_settings(&mut self, settings: Settings) {
+        self.state.launcher.set_visible_rows(settings.rows as usize);
+        self.state.launcher.set_escape_hides(settings.escape_hides);
         self.state.settings = settings;
         if self.state.visible {
             self.state.fit_window();
@@ -218,11 +287,18 @@ struct State {
     pending: Option<(&'static str, Instant)>,
     /// Shows that reached the screen, for the controller.
     shown: Vec<Shown>,
+    /// Key presses the controller must hear about.
+    outcomes: Vec<Outcome>,
+    /// The rows have been on screen since they were set.
+    rows_presented: bool,
     started: bool,
 }
 
 impl State {
     fn new(settings: Settings) -> State {
+        let mut launcher = Launcher::default();
+        launcher.set_visible_rows(settings.rows as usize);
+        launcher.set_escape_hides(settings.escape_hides);
         State {
             settings,
             palette: ORBIT_DARK,
@@ -231,7 +307,7 @@ impl State {
             } else {
                 Mode::Persistent
             },
-            launcher: Launcher::default(),
+            launcher,
             gpu: None,
             renderer: None,
             window: None,
@@ -241,6 +317,8 @@ impl State {
             modifiers: ModifiersState::empty(),
             pending: None,
             shown: Vec::new(),
+            outcomes: Vec::new(),
+            rows_presented: false,
             started: false,
         }
     }
@@ -431,6 +509,7 @@ impl State {
         let layout = Layout::new(self.settings.width, self.settings.rows);
         let presented = renderer.draw(gpu, surface, &self.launcher, &layout, scale, &self.palette);
         if presented && self.visible {
+            self.rows_presented = true;
             if let Some((source, at)) = self.pending.take() {
                 self.shown.push(Shown {
                     source,
@@ -463,14 +542,22 @@ impl State {
             WindowEvent::CloseRequested => self.hide(),
             WindowEvent::ModifiersChanged(mods) => self.modifiers = mods.state(),
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
-                for input in keys::inputs(&event.logical_key, self.modifiers) {
-                    match self.launcher.apply(input) {
+                for press in keys::presses(&event.logical_key, self.modifiers) {
+                    match self.launcher.press(press) {
+                        Outcome::Nothing => {}
                         Outcome::Redraw => self.redraw(),
                         Outcome::Hide => {
                             self.hide();
                             break;
                         }
-                        Outcome::Nothing => {}
+                        outcome => {
+                            self.redraw();
+                            // Several characters committed at once are one
+                            // search, not several.
+                            if self.outcomes.last() != Some(&outcome) {
+                                self.outcomes.push(outcome);
+                            }
+                        }
                     }
                 }
             }
@@ -485,8 +572,22 @@ struct App<C: Controller> {
 }
 
 impl<C: Controller> App<C> {
-    /// Tells the controller about shows that reached the screen.
-    fn report_shown(&mut self, event_loop: &ActiveEventLoop) {
+    /// Tells the controller what happened that it must act on: key
+    /// presses that change the query or ask for an action, and shows that
+    /// reached the screen.
+    fn report(&mut self, event_loop: &ActiveEventLoop) {
+        for outcome in std::mem::take(&mut self.state.outcomes) {
+            let mut ui = Ui {
+                state: &mut self.state,
+                event_loop,
+            };
+            match outcome {
+                Outcome::QueryChanged => self.controller.query_changed(&mut ui),
+                Outcome::Activate(row) => self.controller.activate(row, &mut ui),
+                Outcome::Copy(row) => self.controller.copy(row, &mut ui),
+                Outcome::Nothing | Outcome::Redraw | Outcome::Hide => {}
+            }
+        }
         for shown in std::mem::take(&mut self.state.shown) {
             let mut ui = Ui {
                 state: &mut self.state,
@@ -517,7 +618,7 @@ impl<C: Controller> ApplicationHandler<C::Event> for App<C> {
             event_loop,
         };
         self.controller.event(event, &mut ui);
-        self.report_shown(event_loop);
+        self.report(event_loop);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
@@ -525,7 +626,7 @@ impl<C: Controller> ApplicationHandler<C::Event> for App<C> {
             return;
         }
         self.state.window_event(event);
-        self.report_shown(event_loop);
+        self.report(event_loop);
     }
 }
 

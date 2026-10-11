@@ -1,6 +1,7 @@
-//! Flint's window and everything drawn in it: the query line, the result
-//! list, the footer, and theming; from M2 on, the scope chip and match
-//! highlights, then the action menu and which-key popup (M4).
+//! Flint's window and everything drawn in it: the query line with its
+//! scope chip and mode badge, the result list with match highlights and
+//! provider badges, the footer, and theming; the action menu and which-key
+//! popup arrive in M4.
 //!
 //! Built on the same stack and versions as Fenix (winit 0.30, wgpu 30,
 //! glyphon 0.12) so fonts and themes look identical. On Windows and X11
@@ -32,4 +33,4 @@ pub mod theme;
 
 pub use app::{Controller, Gui, Proxy, ShowRequest, Shown, Ui};
 pub use gpu::AdapterSummary;
-pub use launcher::{FooterLine, Row};
+pub use launcher::{Chip, FooterLine, Mode, Row};

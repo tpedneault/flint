@@ -3,15 +3,19 @@
 //! in docs/CONFIGURATION.md all read this list, so they can't disagree.
 //!
 //! Only settings that do something are declared. Settings the design
-//! names for later milestones (`behaviour.escape_hides` in M2,
-//! `appearance.theme` in M3, `[[quicklinks]]`, `[leader]`, ...) join the
-//! list with the behaviour, so `settings.toml` never accepts a key that
-//! silently does nothing.
+//! names for later milestones (`appearance.theme` and `[fenix]` in M3,
+//! `[leader]` in M4, `[[providers]]` in M5, ...) join the list with the
+//! behaviour, so `settings.toml` never accepts a key that silently does
+//! nothing.
+//!
+//! A list of records (`[[quicklinks]]`) is checked entry by entry: a bad
+//! entry is dropped with its reason and the others are kept, the same
+//! "a bad value costs only itself" rule scalars follow.
 
 use toml::Value;
 
 use crate::chord::Chord;
-use crate::Settings;
+use crate::{Quicklink, Settings};
 
 /// What a setting takes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +31,8 @@ pub enum Kind {
     },
     /// A key chord (`"Alt+Space"`).
     Chord,
+    /// An array of tables (`[[quicklinks]]`) with these fields.
+    Records(&'static [&'static str]),
 }
 
 impl Kind {
@@ -35,11 +41,18 @@ impl Kind {
             Kind::Bool => "`true` or `false`".into(),
             Kind::Int { min, max } => format!("a whole number, {min}–{max}"),
             Kind::Chord => "a key chord, like `\"Ctrl+Shift+Space\"`".into(),
+            Kind::Records(fields) => {
+                let fields: Vec<String> = fields.iter().map(|f| format!("`{f}`")).collect();
+                format!("entries with {}", fields.join(", "))
+            }
         }
     }
 }
 
-type Apply = fn(&mut Settings, &Value) -> Result<(), String>;
+/// Stores a checked value. `Ok` carries problems with single entries of
+/// a list (each already worded, the rest of the list kept); `Err` rejects
+/// the whole value, which then keeps its default.
+type Apply = fn(&mut Settings, &Value) -> Result<Vec<String>, String>;
 
 /// One setting.
 pub struct Setting {
@@ -62,10 +75,12 @@ impl std::fmt::Debug for Setting {
 
 impl Setting {
     /// Checks `value` against the kind and stores it in `settings`. The
-    /// error says what was wrong, without the key (the caller adds it).
-    pub fn apply(&self, settings: &mut Settings, value: &Value) -> Result<(), String> {
+    /// error says what was wrong, without the key (the caller adds it);
+    /// `Ok` lists entries of a list that were dropped, and why.
+    pub fn apply(&self, settings: &mut Settings, value: &Value) -> Result<Vec<String>, String> {
         match (self.kind, value) {
             (Kind::Bool, Value::Boolean(_)) | (Kind::Chord, Value::String(_)) => {}
+            (Kind::Records(_), Value::Array(_)) => {}
             (Kind::Int { min, max }, Value::Integer(n)) => {
                 if !(min..=max).contains(n) {
                     return Err(format!("{n} is out of range ({min}–{max})"));
@@ -105,7 +120,7 @@ pub static SETTINGS: &[Setting] = &[
         apply: |s, v| {
             let text = v.as_str().unwrap_or_default();
             s.hotkey = text.parse::<Chord>()?;
-            Ok(())
+            Ok(vec![])
         },
     },
     Setting {
@@ -118,7 +133,7 @@ pub static SETTINGS: &[Setting] = &[
         help: "The window's width, in logical pixels (scaled with the display).",
         apply: |s, v| {
             s.width = int(v);
-            Ok(())
+            Ok(vec![])
         },
     },
     Setting {
@@ -128,7 +143,7 @@ pub static SETTINGS: &[Setting] = &[
         help: "How many results are shown at once; the window's height follows.",
         apply: |s, v| {
             s.rows = int(v);
-            Ok(())
+            Ok(vec![])
         },
     },
     Setting {
@@ -138,10 +153,85 @@ pub static SETTINGS: &[Setting] = &[
         help: "Hide Flint when it loses focus, as when you click another window.",
         apply: |s, v| {
             s.hide_on_blur = v.as_bool().unwrap_or(true);
-            Ok(())
+            Ok(vec![])
+        },
+    },
+    Setting {
+        key: "behaviour.escape_hides",
+        kind: Kind::Bool,
+        default: "false",
+        help: "Make `Esc` hide Flint from either mode, as Raycast does. By \
+               default `Esc` in Insert mode goes to Normal mode, where a second \
+               `Esc` (or `q`) hides.",
+        apply: |s, v| {
+            s.escape_hides = v.as_bool().unwrap_or(false);
+            Ok(vec![])
+        },
+    },
+    Setting {
+        key: "quicklinks",
+        kind: Kind::Records(&["keyword", "name", "url"]),
+        default: "[]",
+        help: "Links with a keyword: typing the keyword and a space scopes the \
+               query to the link, and `Enter` opens `url` with `{query}` \
+               replaced by what you typed, percent-encoded. A link without \
+               `{query}` just opens. Written as `[[quicklinks]]` tables (see \
+               the example above).",
+        apply: |s, v| {
+            let (links, problems) = quicklinks(v);
+            s.quicklinks = links;
+            Ok(problems)
         },
     },
 ];
+
+/// Reads `[[quicklinks]]`, keeping the good entries and explaining the
+/// others.
+fn quicklinks(value: &Value) -> (Vec<Quicklink>, Vec<String>) {
+    let mut links: Vec<Quicklink> = Vec::new();
+    let mut problems = Vec::new();
+    for (n, entry) in value.as_array().into_iter().flatten().enumerate() {
+        let field = |name: &str| entry.get(name).and_then(Value::as_str).map(str::trim);
+        let checked = (|| -> Result<Quicklink, String> {
+            let keyword = field("keyword")
+                .filter(|k| !k.is_empty())
+                .ok_or("no `keyword`")?;
+            if keyword.contains(char::is_whitespace) {
+                return Err(format!("keyword `{keyword}` has a space in it"));
+            }
+            if links.iter().any(|l| l.keyword == keyword) {
+                return Err(format!("keyword `{keyword}` is used by an earlier entry"));
+            }
+            let name = field("name").filter(|n| !n.is_empty()).ok_or("no `name`")?;
+            let url = field("url").filter(|u| !u.is_empty()).ok_or("no `url`")?;
+            if !has_scheme(url) {
+                return Err(format!(
+                    "url `{url}` doesn't start with a scheme like `https:`"
+                ));
+            }
+            Ok(Quicklink {
+                keyword: keyword.to_owned(),
+                name: name.to_owned(),
+                url: url.to_owned(),
+            })
+        })();
+        match checked {
+            Ok(link) => links.push(link),
+            Err(why) => problems.push(format!("entry {}: {why}", n + 1)),
+        }
+    }
+    (links, problems)
+}
+
+/// `scheme:` per RFC 3986: a letter, then letters, digits, `+`, `-`, `.`.
+fn has_scheme(url: &str) -> bool {
+    let Some((scheme, _)) = url.split_once(':') else {
+        return false;
+    };
+    let mut chars = scheme.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+}
 
 /// The setting with this dotted key.
 pub fn find(key: &str) -> Option<&'static Setting> {
@@ -190,7 +280,49 @@ mod tests {
         keys.sort_unstable();
         keys.dedup();
         assert_eq!(keys.len(), SETTINGS.len());
-        assert!(SETTINGS.iter().all(|s| s.key.split('.').count() == 2));
+        assert!(SETTINGS
+            .iter()
+            .filter(|s| !matches!(s.kind, Kind::Records(_)))
+            .all(|s| s.key.split('.').count() == 2));
+    }
+
+    #[test]
+    fn quicklinks_keep_good_entries_and_explain_bad_ones() {
+        let doc: toml::Table = r#"
+            [[quicklinks]]
+            keyword = "j"
+            name = "Jira issue"
+            url = "https://jira.example.com/browse/{query}"
+            [[quicklinks]]
+            keyword = "j"
+            name = "Again"
+            url = "https://x"
+            [[quicklinks]]
+            keyword = "my space"
+            name = "x"
+            url = "https://x"
+            [[quicklinks]]
+            keyword = "w"
+            name = "Outlook"
+            url = "outlook.office.com"
+            [[quicklinks]]
+            keyword = "mr"
+            url = "https://gitlab/merge_requests?search={query}"
+            [[quicklinks]]
+            keyword = "m"
+            name = "Mail"
+            url = "mailto:me@example.com"
+        "#
+        .parse()
+        .unwrap();
+        let (links, problems) = quicklinks(&doc["quicklinks"]);
+        let keywords: Vec<&str> = links.iter().map(|l| l.keyword.as_str()).collect();
+        assert_eq!(keywords, ["j", "m"]);
+        assert_eq!(problems.len(), 4, "{problems:?}");
+        assert!(problems[0].starts_with("entry 2: keyword `j` is used"));
+        assert!(problems[1].contains("space"));
+        assert!(problems[2].contains("scheme"));
+        assert_eq!(problems[3], "entry 5: no `name`");
     }
 
     /// docs/CONFIGURATION.md lists every setting; this keeps it current.

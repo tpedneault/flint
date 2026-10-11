@@ -1,43 +1,58 @@
-//! The daemon role: the resident process that owns the window, the hotkey
-//! and the control endpoint.
+//! The daemon role: the resident process that owns the window, the hotkey,
+//! the control endpoint and the catalog of everything Flint can find.
 //!
-//! Three threads matter. The event-loop thread owns the window and the
-//! hotkey (Windows delivers a hotkey to the thread that registered it) and
-//! does all the work. The control server's threads (`flint-host`) read
-//! client requests and hand each to the event loop as an [`Event`], then
-//! wait for its answer, at most [`ANSWER_WITHIN`]. Nothing else runs:
-//! while hidden the daemon sleeps until an event arrives.
+//! Three kinds of thread matter. The event-loop thread owns the window,
+//! the hotkey (Windows delivers a hotkey to the thread that registered it)
+//! and the catalog, and does all the work: a keystroke searches right
+//! there, inside the frame. The control server's threads (`flint-host`)
+//! read client requests and hand each to the event loop as an [`Event`],
+//! then wait for its answer, at most [`ANSWER_WITHIN`]. Short-lived
+//! threads scan for apps and save frecency, so neither a cold disk nor a
+//! slow write is ever waited for. While hidden the daemon sleeps until an
+//! event arrives.
 //!
 //! Settings are read at start, on `flint reload`, and on show when the
 //! file is newer than what was read, which keeps the daemon free of a
 //! watcher thread while still picking up an edit the next time it's used.
+//! Apps are scanned at start and again on a show more than
+//! [`RESCAN_AFTER`] after the last scan; results that arrive while the
+//! list is on screen go below the selection (the stable merge).
 //!
-//! The logic that doesn't need a window ([`Core`]: applying settings,
-//! re-registering the hotkey when its chord changes, recording timings)
-//! is generic over [`Hotkey`] and tested with a fake.
+//! The logic that doesn't need a window lives in [`Core`] (settings, the
+//! hotkey and its status, timings; generic over [`Hotkey`] and tested with
+//! a fake) and in [`Catalog`] (searching and what's shown).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::{mpsc, Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use flint_config::{Chord, Folders, Loaded};
-use flint_gui::{Controller, Gui, Proxy, ShowRequest, Shown, Ui};
+use flint_gui::{Controller, FooterLine, Gui, Proxy, ShowRequest, Shown, Ui};
 use flint_host::ClientHandler;
-use flint_platform::{console, process, Hotkey, HotkeyError, Listener, SystemHotkey};
-use flint_protocol::client::{
-    Adapter, HotkeyState, HotkeyStatus, ReloadResult, ShowParams, Status, ToggleResult,
+use flint_platform::{
+    console, launch, process, Clipboard, Hotkey, HotkeyError, Listener, SystemHotkey,
 };
-use flint_protocol::{code, ClientRequest, HostInfo, RpcError};
+use flint_protocol::client::{
+    Adapter, HotkeyState, HotkeyStatus, ProviderStatus, ReloadResult, ShowParams, Status,
+    ToggleResult,
+};
+use flint_protocol::item::{Action, ActionKind};
+use flint_protocol::{code, ClientRequest, HostInfo, Item, RpcError};
+use flint_providers::{apps, commands, quicklinks};
 use serde_json::{json, Value};
 
+use crate::catalog::Catalog;
 use crate::cli::Start;
 use crate::log::Log;
 use crate::report;
+use crate::store::{self, Saver};
 use crate::timings::Recorder;
 
 /// How long a control request may wait for the event loop.
 pub const ANSWER_WITHIN: Duration = Duration::from_secs(5);
+/// Apps are scanned again on a show this long after the last scan.
+pub const RESCAN_AFTER: Duration = Duration::from_secs(5 * 60);
 
 /// What reaches the event loop from other threads.
 pub enum Event {
@@ -52,8 +67,28 @@ pub enum Event {
         /// Where the answer goes.
         reply: mpsc::Sender<Result<Value, RpcError>>,
     },
+    /// An apps scan finished.
+    Apps(Vec<Item>),
     /// `flint quit` was answered; stop.
     Exit,
+}
+
+/// What the window does after an action succeeded.
+enum After {
+    /// Hide: the action handed off to something else.
+    Hide,
+    /// Stay open (a message, a reload).
+    Stay,
+    /// Stay open and search again (the query was replaced).
+    Search,
+    /// Stop Flint.
+    Exit,
+}
+
+fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 /// Starts the daemon on `listener` and runs until `flint quit`.
@@ -78,6 +113,8 @@ pub fn run(
     ));
     let settings_path = folders.settings_file();
     let loaded = flint_config::load(&settings_path);
+    let frecency_path = folders.state("frecency.json");
+    let catalog = Catalog::new(store::load(&frecency_path, &log));
     let gui = match Gui::<Event>::new() {
         Ok(gui) => gui,
         Err(e) => {
@@ -88,6 +125,7 @@ pub fn run(
     let failure = Arc::new(Mutex::new(None));
     let daemon = Daemon {
         proxy: Arc::new(Mutex::new(gui.proxy())),
+        saver: Saver::start(frecency_path, Arc::clone(&log)),
         log: Arc::clone(&log),
         listener: Some(listener),
         start,
@@ -96,6 +134,11 @@ pub fn run(
         settings_path,
         first_load: Some(loaded.clone()),
         core: None,
+        catalog,
+        link_problems: Vec::new(),
+        clipboard: Clipboard::new(),
+        apps_scanned: None,
+        scanning: false,
         failure: Arc::clone(&failure),
     };
     let outcome = gui.run(daemon, loaded.settings);
@@ -115,6 +158,7 @@ pub fn run(
 struct Daemon {
     proxy: Arc<Mutex<Proxy<Event>>>,
     log: Arc<Log>,
+    saver: Saver,
     listener: Option<Listener>,
     start: Start,
     process_start: Instant,
@@ -122,6 +166,12 @@ struct Daemon {
     settings_path: PathBuf,
     first_load: Option<Loaded>,
     core: Option<Core<SystemHotkey>>,
+    catalog: Catalog,
+    /// Quicklinks whose keyword a built-in provider has.
+    link_problems: Vec<String>,
+    clipboard: Clipboard,
+    apps_scanned: Option<Instant>,
+    scanning: bool,
     /// Why the daemon stopped early, for [`run`] to report after the loop.
     failure: Arc<Mutex<Option<String>>>,
 }
@@ -129,6 +179,16 @@ struct Daemon {
 impl Daemon {
     fn status(&self, ui: &Ui<'_>, timings: bool) -> Status {
         let core = self.core.as_ref();
+        let built_in = |name: &str, count: usize, extra: Option<&str>| ProviderStatus {
+            name: name.into(),
+            state: "built in".into(),
+            message: Some(match extra {
+                Some(extra) => format!("{count} items, {extra}"),
+                None => format!("{count} items"),
+            }),
+        };
+        let mut settings_errors = core.map(|c| c.loaded.errors.clone()).unwrap_or_default();
+        settings_errors.extend(self.link_problems.iter().cloned());
         Status {
             version: env!("CARGO_PKG_VERSION").into(),
             pid: std::process::id(),
@@ -148,19 +208,26 @@ impl Daemon {
                 },
                 |c| c.hotkey_status.clone(),
             ),
-            providers: vec![],
+            providers: vec![
+                built_in(
+                    apps::ID,
+                    self.catalog.count(apps::ID),
+                    self.scanning.then_some("scanning"),
+                ),
+                built_in(quicklinks::ID, self.catalog.count(quicklinks::ID), None),
+                built_in(commands::ID, self.catalog.count(commands::ID), None),
+            ],
             memory_bytes: process::resident_bytes(),
-            settings_errors: core.map(|c| c.loaded.errors.clone()).unwrap_or_default(),
+            settings_errors,
             settings_file: Some(self.settings_path.display().to_string()),
             log_file: Some(self.log.path().display().to_string()),
             timings: timings.then(|| core.map(|c| c.timings.report())).flatten(),
         }
     }
 
-    /// Updates the list and the footer from the current status.
+    /// Updates the footer's standing notice from the current status.
     fn refresh(&self, ui: &mut Ui<'_>) {
         let status = self.status(ui, false);
-        ui.set_rows(report::rows(&status));
         ui.set_notice(report::notice(&status));
     }
 
@@ -173,8 +240,18 @@ impl Daemon {
             self.log.line(&line);
         }
         ui.apply_settings(core.loaded.settings.clone());
-        let errors = core.loaded.errors.clone();
+        self.link_problems = self
+            .catalog
+            .set_quicklinks(&core.loaded.settings.quicklinks);
+        for problem in &self.link_problems {
+            self.log.line(&format!("settings: {problem}"));
+        }
+        let mut errors = core.loaded.errors.clone();
+        errors.extend(self.link_problems.iter().cloned());
         self.refresh(ui);
+        if ui.visible() {
+            self.search(ui);
+        }
         errors
     }
 
@@ -187,6 +264,165 @@ impl Daemon {
         {
             self.log.line("settings.toml changed; reading it again");
             self.reload(ui);
+        }
+    }
+
+    /// Lists apps on a thread of its own; the result arrives as
+    /// [`Event::Apps`].
+    fn scan_apps(&mut self) {
+        if self.scanning {
+            return;
+        }
+        self.scanning = true;
+        let proxy = Arc::clone(&self.proxy);
+        let spawned = std::thread::Builder::new()
+            .name("flint-apps".into())
+            .spawn(move || {
+                let items = apps::scan();
+                let proxy = proxy.lock().unwrap_or_else(|e| e.into_inner());
+                proxy.send(Event::Apps(items));
+            });
+        if let Err(e) = spawned {
+            self.scanning = false;
+            self.log.line(&format!("apps: no thread to scan with: {e}"));
+        }
+    }
+
+    /// After any show: results for the query, and a fresh apps scan when
+    /// the last one is old.
+    fn shown_now(&mut self, ui: &mut Ui<'_>) {
+        if self
+            .apps_scanned
+            .is_none_or(|at| at.elapsed() > RESCAN_AFTER)
+        {
+            self.scan_apps();
+        }
+        self.search(ui);
+    }
+
+    /// Searches for the query line as it is, turning a leading scope
+    /// keyword into the chip first.
+    fn search(&mut self, ui: &mut Ui<'_>) {
+        let mut text = ui.query().to_owned();
+        let mut scope = ui.scope().map(|c| c.keyword.clone());
+        if scope.is_none() {
+            if let Some((chip, rest)) = self.catalog.split_scope(&text) {
+                let rest = rest.to_owned();
+                scope = Some(chip.keyword.clone());
+                ui.set_scope(Some(chip));
+                ui.set_query(rest.clone());
+                text = rest;
+            }
+        }
+        let rows = self.catalog.search(scope.as_deref(), &text, now());
+        ui.set_rows(rows);
+    }
+
+    /// New apps arrived: re-rank, keeping on-screen rows in place.
+    fn apps_arrived(&mut self, items: Vec<Item>, ui: &mut Ui<'_>) {
+        self.scanning = false;
+        self.apps_scanned = Some(Instant::now());
+        let count = items.len();
+        for problem in self.catalog.set_items(apps::ID, items) {
+            self.log.line(&format!("apps: {problem}"));
+        }
+        self.log.line(&format!("apps: {count} found"));
+        if !ui.visible() {
+            // Draw what the next show will start with, while nobody is
+            // waiting: the first show after start otherwise rasterises
+            // every row's glyphs and misses the 50 ms budget.
+            self.search(ui);
+            ui.prepare();
+            return;
+        }
+        if ui.rows_presented() {
+            let scope = ui.scope().map(|c| c.keyword.clone());
+            let rows = self
+                .catalog
+                .merge(scope.as_deref(), ui.query(), ui.selected(), now());
+            ui.merge_rows(rows);
+        } else {
+            self.search(ui);
+        }
+    }
+
+    /// Runs `action` of the item on row `row`.
+    fn run_action(&mut self, row: usize, action: &Action, ui: &mut Ui<'_>) {
+        let Some(shown) = self.catalog.shown(row).cloned() else {
+            return;
+        };
+        let result = match &action.kind {
+            ActionKind::Open { target } => launch::open(target).map(|()| After::Hide),
+            ActionKind::Run {
+                argv,
+                cwd,
+                terminal,
+            } => launch::run(argv, cwd.as_deref(), *terminal).map(|()| After::Hide),
+            ActionKind::Copy { text } => self.clipboard.set(text).map(|()| After::Hide),
+            ActionKind::Query { text } => {
+                ui.set_scope(None);
+                ui.set_query(text.clone());
+                Ok(After::Search)
+            }
+            ActionKind::Provider if shown.provider == commands::ID => {
+                self.flint_command(&action.id, ui)
+            }
+            ActionKind::Provider => Err(format!(
+                "`{}` needs its provider, which arrives in M5",
+                action.title
+            )),
+            ActionKind::Reveal { .. } => {
+                Err("showing in the file manager arrives with the action menu in M4".into())
+            }
+            ActionKind::Fenix { .. } => Err("Fenix actions arrive in M7".into()),
+            ActionKind::Unknown => Err(format!(
+                "`{}` is a kind of action this Flint doesn't know",
+                action.title
+            )),
+        };
+        match result {
+            Ok(after) => {
+                self.catalog.record(&shown.item.id, now());
+                self.saver.save(self.catalog.frecency());
+                match after {
+                    After::Hide => ui.hide(),
+                    After::Stay => {}
+                    After::Search => self.search(ui),
+                    After::Exit => {
+                        self.log.line("quitting from the window");
+                        ui.exit();
+                    }
+                }
+            }
+            Err(why) => {
+                self.log.line(&format!("{}: {why}", shown.item.title));
+                ui.set_message(FooterLine::error(why));
+            }
+        }
+    }
+
+    fn flint_command(&mut self, action_id: &str, ui: &mut Ui<'_>) -> Result<After, String> {
+        match commands::command(action_id) {
+            Some(commands::Command::Reload) => {
+                let errors = self.reload(ui);
+                ui.set_message(match errors.first() {
+                    None => FooterLine::info("Settings reloaded"),
+                    Some(first) if errors.len() == 1 => FooterLine::error(first.clone()),
+                    Some(first) => {
+                        FooterLine::error(format!("{first} (and {} more)", errors.len() - 1))
+                    }
+                });
+                Ok(After::Stay)
+            }
+            Some(commands::Command::Settings) => {
+                create_settings_file(&self.settings_path)?;
+                launch::open(&self.settings_path.display().to_string()).map(|()| After::Hide)
+            }
+            Some(commands::Command::Log) => {
+                launch::open(&self.log.path().display().to_string()).map(|()| After::Hide)
+            }
+            Some(commands::Command::Quit) => Ok(After::Exit),
+            None => Err(format!("Flint has no command `{action_id}`")),
         }
     }
 
@@ -209,6 +445,7 @@ impl Daemon {
             ClientRequest::Show(params) => {
                 self.reload_if_changed(ui);
                 ui.show(Self::show_request(params, "show", at));
+                self.shown_now(ui);
                 json!({})
             }
             ClientRequest::Hide => {
@@ -224,6 +461,9 @@ impl Daemon {
                     activation_token: params.activation_token,
                 };
                 let visible = ui.toggle(Self::show_request(show, "toggle", at));
+                if visible {
+                    self.shown_now(ui);
+                }
                 json!(ToggleResult { visible })
             }
             ClientRequest::Reload => json!(ReloadResult {
@@ -235,9 +475,7 @@ impl Daemon {
             ClientRequest::Quit => json!({}),
         })
     }
-}
 
-impl Daemon {
     fn serve(&self, mut listener: Listener) {
         let bridge: Arc<dyn ClientHandler> = Arc::new(Bridge {
             proxy: Arc::clone(&self.proxy),
@@ -268,6 +506,26 @@ impl Daemon {
     }
 }
 
+/// `settings.toml` doesn't have to exist, but "Open settings" needs a
+/// file to open: an empty one pointing at the docs. Never overwrites.
+fn create_settings_file(path: &std::path::Path) -> Result<(), String> {
+    if path.exists() {
+        return Ok(());
+    }
+    let header = "# Flint's settings. Every setting, its default and what it does:\n\
+                  # https://github.com/tpedneault/flint/blob/master/docs/CONFIGURATION.md\n";
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)
+            .map_err(|e| format!("couldn't create {}: {e}", dir.display()))?;
+    }
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, header.as_bytes()))
+        .map_err(|e| format!("couldn't create {}: {e}", path.display()))
+}
+
 impl Controller for Daemon {
     type Event = Event;
 
@@ -291,6 +549,12 @@ impl Controller for Daemon {
                 self.log.line(&line);
             }
         }
+        self.link_problems = self
+            .catalog
+            .set_quicklinks(&core.loaded.settings.quicklinks);
+        for problem in &self.link_problems {
+            self.log.line(&format!("settings: {problem}"));
+        }
         self.core = Some(core);
         if let Some(adapter) = ui.adapter() {
             self.log.line(&format!(
@@ -308,12 +572,14 @@ impl Controller for Daemon {
         if let Some(listener) = self.listener.take() {
             self.serve(listener);
         }
+        self.scan_apps();
         let cold = self.process_start.elapsed();
         self.cold_start = Some(cold);
         self.log.line(&format!("ready in {} ms", cold.as_millis()));
         self.refresh(ui);
         if let Some(params) = self.start.show.take() {
             ui.show(Self::show_request(params, "start", Instant::now()));
+            self.search(ui);
         }
     }
 
@@ -323,13 +589,16 @@ impl Controller for Daemon {
                 if !ui.visible() {
                     self.reload_if_changed(ui);
                 }
-                ui.toggle(Self::show_request(ShowParams::default(), "hotkey", at));
+                if ui.toggle(Self::show_request(ShowParams::default(), "hotkey", at)) {
+                    self.shown_now(ui);
+                }
             }
             Event::Request { request, at, reply } => {
                 let answer = self.answer(request, at, ui);
                 // The client may have given up; nothing to do then.
                 let _ = reply.send(answer);
             }
+            Event::Apps(items) => self.apps_arrived(items, ui),
             Event::Exit => {
                 self.log.line("quitting at a client's request");
                 ui.exit();
@@ -341,6 +610,35 @@ impl Controller for Daemon {
         if let Some(core) = &mut self.core {
             let line = core.timings.record(shown.source, shown.elapsed);
             self.log.line(&line);
+        }
+    }
+
+    fn query_changed(&mut self, ui: &mut Ui<'_>) {
+        self.search(ui);
+    }
+
+    fn activate(&mut self, row: usize, ui: &mut Ui<'_>) {
+        let Some(action) = self
+            .catalog
+            .shown(row)
+            .and_then(|s| s.item.primary().cloned())
+        else {
+            return;
+        };
+        self.run_action(row, &action, ui);
+    }
+
+    fn copy(&mut self, row: usize, ui: &mut Ui<'_>) {
+        let Some(text) = self
+            .catalog
+            .shown(row)
+            .map(|s| s.item.primary_text().to_owned())
+        else {
+            return;
+        };
+        match self.clipboard.set(&text) {
+            Ok(()) => ui.set_message(FooterLine::info(format!("Copied {text}"))),
+            Err(why) => ui.set_message(FooterLine::error(why)),
         }
     }
 }

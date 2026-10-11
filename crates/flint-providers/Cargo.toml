@@ -11,3 +11,5 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+flint-config = { path = "../flint-config" }
+flint-protocol = { path = "../flint-protocol" }
