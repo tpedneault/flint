@@ -18,6 +18,12 @@
 //! [`RESCAN_AFTER`] after the last scan; results that arrive while the
 //! list is on screen go below the selection (the stable merge).
 //!
+//! Fenix (level 0, M3): its projects and recent files are read from its
+//! state files on show when they changed, and its theme and font from its
+//! `settings.toml` before every show when `appearance.theme` follows it,
+//! each a `stat` when nothing changed. Fenix actions go through
+//! `flint_fenix::handoff`, which spawns `fenix <file>`.
+//!
 //! The logic that doesn't need a window lives in [`Core`] (settings, the
 //! hotkey and its status, timings; generic over [`Hotkey`] and tested with
 //! a fake) and in [`Catalog`] (searching and what's shown).
@@ -28,6 +34,8 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use flint_config::{Chord, Folders, Loaded};
+use flint_fenix::{handoff, items as fenix, look, Look, Roots, Stamps};
+use flint_gui::theme::{self, ORBIT_DARK};
 use flint_gui::{Controller, FooterLine, Gui, Proxy, ShowRequest, Shown, Ui};
 use flint_host::ClientHandler;
 use flint_platform::{
@@ -123,6 +131,7 @@ pub fn run(
         }
     };
     let failure = Arc::new(Mutex::new(None));
+    let fenix_roots = Roots::current();
     let daemon = Daemon {
         proxy: Arc::new(Mutex::new(gui.proxy())),
         saver: Saver::start(frecency_path, Arc::clone(&log)),
@@ -139,6 +148,16 @@ pub fn run(
         clipboard: Clipboard::new(),
         apps_scanned: None,
         scanning: false,
+        fenix_state: Stamps::new(
+            fenix_roots
+                .iter()
+                .flat_map(flint_fenix::state::files)
+                .collect(),
+        ),
+        fenix_look: Stamps::new(fenix_roots.iter().map(Roots::settings_file).collect()),
+        fenix_roots,
+        fenix_problems: Vec::new(),
+        appearance: None,
         failure: Arc::clone(&failure),
     };
     let outcome = gui.run(daemon, loaded.settings);
@@ -172,6 +191,16 @@ struct Daemon {
     clipboard: Clipboard,
     apps_scanned: Option<Instant>,
     scanning: bool,
+    /// Fenix's folders; `None` where it has none (no home directory).
+    fenix_roots: Option<Roots>,
+    /// Fenix's state files, to read them again only when they change.
+    fenix_state: Stamps,
+    /// Fenix's settings file, for following its theme.
+    fenix_look: Stamps,
+    /// Fenix state files that couldn't be read, already logged.
+    fenix_problems: Vec<String>,
+    /// The theme in use and why, and the font, for `flint status`.
+    appearance: Option<(String, String)>,
     /// Why the daemon stopped early, for [`run`] to report after the loop.
     failure: Arc<Mutex<Option<String>>>,
 }
@@ -216,12 +245,101 @@ impl Daemon {
                 ),
                 built_in(quicklinks::ID, self.catalog.count(quicklinks::ID), None),
                 built_in(commands::ID, self.catalog.count(commands::ID), None),
+                built_in(fenix::PROJECTS, self.catalog.count(fenix::PROJECTS), None),
+                built_in(fenix::RECENT, self.catalog.count(fenix::RECENT), None),
+                ProviderStatus {
+                    name: "fenix".into(),
+                    state: "level 0".into(),
+                    message: Some(match flint_fenix::locate::find(&self.fenix_executable()) {
+                        Ok(path) => format!("opens files with {}", path.display()),
+                        Err(why) => why,
+                    }),
+                },
             ],
+            theme: self.appearance.as_ref().map(|(t, _)| t.clone()),
+            font: self.appearance.as_ref().map(|(_, f)| f.clone()),
             memory_bytes: process::resident_bytes(),
             settings_errors,
             settings_file: Some(self.settings_path.display().to_string()),
             log_file: Some(self.log.path().display().to_string()),
             timings: timings.then(|| core.map(|c| c.timings.report())).flatten(),
+        }
+    }
+
+    fn fenix_executable(&self) -> String {
+        self.core
+            .as_ref()
+            .map(|c| c.loaded.settings.fenix_executable.clone())
+            .unwrap_or_default()
+    }
+
+    /// Reads Fenix's projects and recent files again when its state files
+    /// changed.
+    fn read_fenix_state(&mut self) {
+        let Some(roots) = &self.fenix_roots else {
+            return;
+        };
+        if !self.fenix_state.changed() {
+            return;
+        }
+        let (state, problems) = flint_fenix::state::read(roots);
+        for problem in &problems {
+            if !self.fenix_problems.contains(problem) {
+                self.log.line(problem);
+            }
+        }
+        self.fenix_problems = problems;
+        self.catalog
+            .set_ranked(fenix::PROJECTS, fenix::projects(&state));
+        self.catalog
+            .set_ranked(fenix::RECENT, fenix::recent(&state));
+        self.log.line(&format!(
+            "fenix: {} projects, {} recent files",
+            state.projects.len(),
+            state.recent.len()
+        ));
+    }
+
+    /// Draws with the theme `appearance.theme` names, or Fenix's when it
+    /// says `fenix`. Unless `force`, does nothing when Fenix's settings
+    /// haven't changed (one `stat`), so it can run before every show.
+    fn follow_look(&mut self, ui: &mut Ui<'_>, force: bool) {
+        let setting = self
+            .core
+            .as_ref()
+            .map_or_else(|| "fenix".to_owned(), |c| c.loaded.settings.theme.clone());
+        let following = setting == "fenix";
+        let fenix_changed = following && self.fenix_look.changed();
+        if !force && !fenix_changed {
+            return;
+        }
+        let fenix_look = match (&self.fenix_roots, following) {
+            (Some(roots), true) => look::read(&roots.settings_file()),
+            _ => Look::default(),
+        };
+        let (palette, why) = if following {
+            match fenix_look.theme.as_deref() {
+                Some(name) => match theme::by_name(name) {
+                    Some(palette) => (palette, "following Fenix".to_owned()),
+                    None => (&ORBIT_DARK, format!("Fenix's {name} isn't one Flint has")),
+                },
+                None => (&ORBIT_DARK, "Fenix's default".to_owned()),
+            }
+        } else {
+            (
+                theme::by_name(&setting).unwrap_or(&ORBIT_DARK),
+                "set in settings.toml".to_owned(),
+            )
+        };
+        let font = fenix_look
+            .font_family
+            .or(palette.font_family.map(str::to_owned));
+        let used = ui.set_appearance(*palette, font);
+        let appearance = (format!("{} ({why})", palette.name), used);
+        if self.appearance.as_ref() != Some(&appearance) {
+            self.log
+                .line(&format!("theme {}, font {}", appearance.0, appearance.1));
+            self.appearance = Some(appearance);
         }
     }
 
@@ -248,6 +366,7 @@ impl Daemon {
         }
         let mut errors = core.loaded.errors.clone();
         errors.extend(self.link_problems.iter().cloned());
+        self.follow_look(ui, true);
         self.refresh(ui);
         if ui.visible() {
             self.search(ui);
@@ -255,7 +374,8 @@ impl Daemon {
         errors
     }
 
-    /// Reads settings again when the file changed since it was last read.
+    /// Before a show: reads settings again when the file changed, and
+    /// follows a change in Fenix's theme.
     fn reload_if_changed(&mut self, ui: &mut Ui<'_>) {
         if self
             .core
@@ -264,6 +384,8 @@ impl Daemon {
         {
             self.log.line("settings.toml changed; reading it again");
             self.reload(ui);
+        } else {
+            self.follow_look(ui, false);
         }
     }
 
@@ -291,6 +413,7 @@ impl Daemon {
     /// After any show: results for the query, and a fresh apps scan when
     /// the last one is old.
     fn shown_now(&mut self, ui: &mut Ui<'_>) {
+        self.read_fenix_state();
         if self
             .apps_scanned
             .is_none_or(|at| at.elapsed() > RESCAN_AFTER)
@@ -374,7 +497,9 @@ impl Daemon {
             ActionKind::Reveal { .. } => {
                 Err("showing in the file manager arrives with the action menu in M4".into())
             }
-            ActionKind::Fenix { .. } => Err("Fenix actions arrive in M7".into()),
+            ActionKind::Fenix { method, params } => {
+                handoff::execute(method, params, &self.fenix_executable()).map(|()| After::Hide)
+            }
             ActionKind::Unknown => Err(format!(
                 "`{}` is a kind of action this Flint doesn't know",
                 action.title
@@ -573,6 +698,8 @@ impl Controller for Daemon {
             self.serve(listener);
         }
         self.scan_apps();
+        self.read_fenix_state();
+        self.follow_look(ui, true);
         let cold = self.process_start.elapsed();
         self.cold_start = Some(cold);
         self.log.line(&format!("ready in {} ms", cold.as_millis()));

@@ -9,7 +9,7 @@ This document is the design the first implementation follows. The wire
 protocol is in [PROTOCOL.md](PROTOCOL.md); what Flint needs from Fenix,
 and what Fenix has to add, is in [FENIX-INTEGRATION.md](FENIX-INTEGRATION.md).
 
-Status: M2 implemented (see [ARCHITECTURE.md](ARCHITECTURE.md)). Pinned against Fenix
+Status: M3 implemented (see [ARCHITECTURE.md](ARCHITECTURE.md)). Pinned against Fenix
 `f05780740b7d45e41eedc35b846dba7c832f4d49` (2026-10-11).
 
 ## Why the name
@@ -224,8 +224,10 @@ lazily and cached; never block a frame on one.
 
 Flint follows Fenix's theme by default: it reads `editor.theme` and
 `editor.font_family` from Fenix's `settings.toml` (through
-`fenix_storage::paths::settings_file()`), watches the file, and applies a
-change live. `appearance.theme = "fenix"` (default) means "follow Fenix";
+`fenix_storage::paths::settings_file()`) and applies a change the next
+time it is shown, checking the file's modification time before each show
+rather than keeping a watcher (decided in M3: nothing else in the daemon
+runs while it is hidden, and a change can only be seen on a show). `appearance.theme = "fenix"` (default) means "follow Fenix";
 any theme name pins one.
 
 Fenix's palettes live in `fenix-gui` and are built from `glyphon` types, so

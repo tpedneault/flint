@@ -252,6 +252,22 @@ impl Ui<'_> {
         }
     }
 
+    /// Draws with `palette` and, when installed, `font` (else the
+    /// monospace family Fenix would pick). Returns the family in use.
+    pub fn set_appearance(&mut self, palette: Palette, font: Option<String>) -> String {
+        self.state.palette = palette;
+        self.state.font = font;
+        if let Some(renderer) = &mut self.state.renderer {
+            renderer.set_font(self.state.font.as_deref());
+        }
+        self.state.redraw();
+        self.state
+            .renderer
+            .as_ref()
+            .map(|r| r.font().to_owned())
+            .unwrap_or_default()
+    }
+
     /// The GPU adapter in use, once ready.
     pub fn adapter(&self) -> Option<AdapterSummary> {
         self.state.gpu.as_ref().map(|g| g.summary.clone())
@@ -273,6 +289,8 @@ enum Mode {
 struct State {
     settings: Settings,
     palette: Palette,
+    /// The font asked for; the renderer falls back when it isn't installed.
+    font: Option<String>,
     mode: Mode,
     launcher: Launcher,
     gpu: Option<Gpu>,
@@ -302,6 +320,7 @@ impl State {
         State {
             settings,
             palette: ORBIT_DARK,
+            font: None,
             mode: if flint_wayland() {
                 Mode::PerShow
             } else {
@@ -427,6 +446,7 @@ impl State {
                     Ok(surface) => {
                         if surface.config.format != renderer.format() {
                             *renderer = Renderer::new(gpu, surface.config.format);
+                            renderer.set_font(self.font.as_deref());
                         }
                         self.surface = Some(surface);
                     }

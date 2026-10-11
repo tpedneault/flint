@@ -120,6 +120,30 @@ impl Renderer {
         }
     }
 
+    /// Uses `wanted` for all text when it is installed, else the monospace
+    /// family Fenix would pick. A name is no proof a font exists (a
+    /// settings file from another machine), so it is checked first.
+    pub fn set_font(&mut self, wanted: Option<&str>) {
+        let db = self.font_system.db();
+        let family = wanted
+            .map(str::trim)
+            .filter(|w| !w.is_empty())
+            .filter(|w| {
+                db.faces().any(|face| {
+                    face.families
+                        .iter()
+                        .any(|(name, _)| name.eq_ignore_ascii_case(w))
+                })
+            })
+            .map(str::to_owned);
+        self.family = family.unwrap_or_else(|| monospace_family(&self.font_system));
+    }
+
+    /// The family text is drawn in.
+    pub fn font(&self) -> &str {
+        &self.family
+    }
+
     /// The surface format the pipelines were built for.
     pub fn format(&self) -> wgpu::TextureFormat {
         self.format

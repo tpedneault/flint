@@ -1,0 +1,11 @@
+{
+  "dirs": [
+    "\\\\?\\C:\\dev"
+  ],
+  "files": [
+    "\\\\?\\C:\\dev\\fenix\\src\\main.rs",
+    "\\\\?\\C:\\dev\\flint\\Cargo.toml",
+    "C:\\dev\\fenix\\src\\main.rs",
+    "\\\\?\\C:\\dev\\flint\\docs\\DESIGN.md"
+  ]
+}

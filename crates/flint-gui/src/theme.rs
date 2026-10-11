@@ -1,12 +1,12 @@
-//! The colours Flint draws with.
+//! The colours Flint draws with: Fenix's eight themes.
 //!
 //! Fenix's palettes live in `fenix-gui`, built from `glyphon` types, so
-//! Flint can't depend on them; it copies the handful of colours it needs.
-//! M1 carries one palette, Orbit Dark (Fenix's default), copied from
-//! `crates/fenix-gui/src/theme.rs` at Fenix
-//! `f05780740b7d45e41eedc35b846dba7c832f4d49`. M3 adds the other seven and
-//! follows Fenix's `editor.theme`; F9 in FENIX-INTEGRATION.md would replace
-//! the copy with a shared `fenix-theme` crate.
+//! Flint can't depend on them; it copies the handful of colours it needs
+//! from each, from `crates/fenix-gui/src/theme.rs` at Fenix
+//! `f05780740b7d45e41eedc35b846dba7c832f4d49`. Which one is used follows
+//! Fenix's `editor.theme` unless `appearance.theme` pins one (the daemon
+//! decides; this module only names them). F9 in FENIX-INTEGRATION.md would
+//! replace the copy with a shared `fenix-theme` crate.
 //!
 //! Colours are plain `0..1` RGBA written straight to a non-sRGB surface,
 //! exactly as Fenix's are, so the same hex value looks the same in both.
@@ -16,6 +16,9 @@
 pub struct Palette {
     /// Fenix's name for the theme.
     pub name: &'static str,
+    /// The theme's own font, which `editor.font_family` overrides in Fenix
+    /// and in Flint.
+    pub font_family: Option<&'static str>,
     /// The window background (Fenix's `bg`).
     pub background: [f32; 4],
     /// The query line and footer (Fenix's `bg_modeline`).
@@ -30,7 +33,7 @@ pub struct Palette {
     pub selection: [f32; 4],
     /// The window's edge (Fenix's `hl_line`).
     pub border: [f32; 4],
-    /// Errors in the footer (Fenix's `git_conflicted` red).
+    /// Errors in the footer (Fenix's `git_conflicted`).
     pub error: [f32; 4],
     /// The mode badge and caret in Insert mode (Fenix's `mode_insert`).
     pub mode_insert: [f32; 4],
@@ -38,7 +41,7 @@ pub struct Palette {
     pub mode_normal: [f32; 4],
     /// Text on a mode badge or the scope chip (Fenix's `mode_text_dark`).
     pub badge_text: [f32; 4],
-    /// The scope chip (Fenix's `syntax_function` blue).
+    /// The scope chip (Fenix's `syntax_function`).
     pub chip: [f32; 4],
 }
 
@@ -56,6 +59,7 @@ const fn rgba_alpha(hex: u32, alpha: f32) -> [f32; 4] {
 /// Orbit Dark, Fenix's default theme.
 pub const ORBIT_DARK: Palette = Palette {
     name: "Orbit Dark",
+    font_family: None,
     background: rgba(0x1a1b26),
     surface: rgba(0x24283b),
     foreground: rgba(0xc0caf5),
@@ -69,6 +73,151 @@ pub const ORBIT_DARK: Palette = Palette {
     badge_text: rgba(0x1a1b26),
     chip: rgba(0x7aa2f7),
 };
+
+/// TempleOS: white, with VGA blue.
+pub const TEMPLEOS: Palette = Palette {
+    name: "TempleOS",
+    font_family: None,
+    background: rgba(0xffffff),
+    surface: rgba(0x0000aa),
+    foreground: rgba(0x000000),
+    muted: rgba(0x555555),
+    accent: rgba(0x5555ff),
+    selection: rgba_alpha(0x0000aa, 0.45),
+    border: rgba_alpha(0x5555ff, 0.25),
+    error: rgba(0xaa0000),
+    mode_insert: rgba(0x55ffff),
+    mode_normal: rgba(0x55ff55),
+    badge_text: rgba(0x000000),
+    chip: rgba(0xaa00aa),
+};
+
+/// Gruvbox Dark.
+pub const GRUVBOX_DARK: Palette = Palette {
+    name: "Gruvbox Dark",
+    font_family: None,
+    background: rgba(0x1d2021),
+    surface: rgba(0x282828),
+    foreground: rgba(0xebdbb2),
+    muted: rgba(0xa89984),
+    accent: rgba(0xfabd2f),
+    selection: rgba_alpha(0x83a598, 0.12),
+    border: rgba(0x282828),
+    error: rgba(0xfb7965),
+    mode_insert: rgba(0x83a598),
+    mode_normal: rgba(0xfabd2f),
+    badge_text: rgba(0x1d2021),
+    chip: rgba(0x83a598),
+};
+
+/// Nord.
+pub const NORD: Palette = Palette {
+    name: "Nord",
+    font_family: None,
+    background: rgba(0x2e3440),
+    surface: rgba(0x343b49),
+    foreground: rgba(0xd8dee9),
+    muted: rgba(0x9aa6bc),
+    accent: rgba(0x88c0d0),
+    selection: rgba_alpha(0x91b1d1, 0.12),
+    border: rgba(0x343b49),
+    error: rgba(0xdf929c),
+    mode_insert: rgba(0x88c0d0),
+    mode_normal: rgba(0xa3be8c),
+    badge_text: rgba(0x202530),
+    chip: rgba(0x88c0d0),
+};
+
+/// Dracula.
+pub const DRACULA: Palette = Palette {
+    name: "Dracula",
+    font_family: None,
+    background: rgba(0x282a36),
+    surface: rgba(0x303341),
+    foreground: rgba(0xf8f8f2),
+    muted: rgba(0x9badd4),
+    accent: rgba(0xff79c6),
+    selection: rgba_alpha(0xbd93f9, 0.12),
+    border: rgba(0x303341),
+    error: rgba(0xff7979),
+    mode_insert: rgba(0x8be9fd),
+    mode_normal: rgba(0x50fa7b),
+    badge_text: rgba(0x282a36),
+    chip: rgba(0x50fa7b),
+};
+
+/// Solarized Dark.
+pub const SOLARIZED_DARK: Palette = Palette {
+    name: "Solarized Dark",
+    font_family: None,
+    background: rgba(0x002b36),
+    surface: rgba(0x073642),
+    foreground: rgba(0xb5c3be),
+    muted: rgba(0x92a4a5),
+    accent: rgba(0xd8ad44),
+    selection: rgba_alpha(0x55a8df, 0.12),
+    border: rgba(0x073642),
+    error: rgba(0xed7770),
+    mode_insert: rgba(0x52b7ad),
+    mode_normal: rgba(0xd8ad44),
+    badge_text: rgba(0x00212b),
+    chip: rgba(0x55a8df),
+};
+
+/// One Dark.
+pub const ONE_DARK: Palette = Palette {
+    name: "One Dark",
+    font_family: None,
+    background: rgba(0x282c34),
+    surface: rgba(0x21252b),
+    foreground: rgba(0xc1c8d4),
+    muted: rgba(0x9aa2b1),
+    accent: rgba(0xe5c07b),
+    selection: rgba_alpha(0x61afef, 0.12),
+    border: rgba(0x30353f),
+    error: rgba(0xed929b),
+    mode_insert: rgba(0x56b6c2),
+    mode_normal: rgba(0x98c379),
+    badge_text: rgba(0x21252b),
+    chip: rgba(0x61afef),
+};
+
+/// Visual Studio Dark, which brings its own font.
+pub const VISUAL_STUDIO_DARK: Palette = Palette {
+    name: "Visual Studio Dark",
+    font_family: Some("Consolas"),
+    background: rgba(0x1e1e1e),
+    surface: rgba(0x2d2d30),
+    foreground: rgba(0xd4d4d4),
+    muted: rgba(0x9c9c9c),
+    accent: rgba(0x4fc1ff),
+    selection: rgba_alpha(0x264f78, 0.55),
+    border: rgba(0x2a2d2e),
+    error: rgba(0xf46a6a),
+    mode_insert: rgba(0x4ec9b0),
+    mode_normal: rgba(0x569cd6),
+    badge_text: rgba(0x1e1e1e),
+    chip: rgba(0xdcdcaa),
+};
+
+/// Every theme, in Fenix's `theme::ALL` order.
+pub const ALL: [&Palette; 8] = [
+    &ORBIT_DARK,
+    &TEMPLEOS,
+    &GRUVBOX_DARK,
+    &NORD,
+    &DRACULA,
+    &SOLARIZED_DARK,
+    &ONE_DARK,
+    &VISUAL_STUDIO_DARK,
+];
+
+/// The theme called `name`, in any case, as Fenix looks themes up.
+pub fn by_name(name: &str) -> Option<&'static Palette> {
+    ALL.iter()
+        .find(|p| p.name.eq_ignore_ascii_case(name.trim()))
+        .copied()
+}
 
 /// Converts a palette colour for glyphon.
 pub fn text_color(c: [f32; 4]) -> glyphon::Color {
@@ -84,5 +233,40 @@ mod tests {
     fn hex_survives_the_round_trip_to_glyphon() {
         let c = text_color(ORBIT_DARK.foreground);
         assert_eq!((c.r(), c.g(), c.b(), c.a()), (0xc0, 0xca, 0xf5, 0xff));
+    }
+
+    #[test]
+    fn lookup_ignores_case_like_fenix() {
+        assert_eq!(
+            by_name("visual studio dark").unwrap().name,
+            "Visual Studio Dark"
+        );
+        assert_eq!(by_name(" Nord ").unwrap().name, "Nord");
+        assert!(by_name("Solarized Light").is_none());
+    }
+
+    #[test]
+    fn the_themes_are_the_ones_settings_offer() {
+        let ours: Vec<&str> = ALL.iter().map(|p| p.name).collect();
+        assert_eq!(
+            ours,
+            flint_config::THEMES[1..],
+            "flint-config's THEMES and the palettes differ"
+        );
+    }
+
+    /// DESIGN.md, "Theming", lists Fenix's `theme::ALL`; the copy must
+    /// have exactly those, so a theme Fenix adds shows up here as a
+    /// failing test when the pinned revision moves.
+    #[test]
+    fn the_themes_are_the_ones_design_lists() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/DESIGN.md");
+        let design = std::fs::read_to_string(path).unwrap();
+        let flat = design.split_whitespace().collect::<Vec<_>>().join(" ");
+        let list = ALL.iter().map(|p| p.name).collect::<Vec<_>>().join(", ");
+        assert!(
+            flat.contains(&format!("{list}.")),
+            "DESIGN.md doesn't list: {list}"
+        );
     }
 }

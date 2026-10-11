@@ -57,6 +57,8 @@ arrive in M4; until then they say so in the footer.
 | Result | `Enter` |
 |---|---|
 | an app | launches it, as the Start menu would (Windows) or as its `.desktop` file says (Linux) |
+| a Fenix project | opens its folder (opening it *in Fenix* needs a newer Fenix; it says so) |
+| a Fenix recent file | opens it in Fenix, handing it to the Fenix already running |
 | a quicklink taking a query | puts its keyword in the query line, so you can type what fills it |
 | a scoped quicklink (`j ABC-123`) | opens the filled-in link |
 | Reload settings | reads `settings.toml` again and says what's wrong, if anything |
@@ -76,6 +78,8 @@ on an empty query removes it.
 | Keyword | Searches |
 |---|---|
 | `a` | installed apps |
+| `p` | Fenix's projects, pinned first |
+| `f` | Fenix's recent files, most recent first |
 | `flint` | Flint's own commands |
 | a quicklink's keyword | that link, filled with what you type |
 

@@ -1,0 +1,9 @@
+# Copied in shape from a real Fenix settings.toml; values are made up.
+[editor]
+theme = "Visual Studio Dark"
+font_family = "Consolas"
+font_size = 15.0
+
+[jira]
+base_url = "https://jira.example.com"
+token = "not-a-real-token"

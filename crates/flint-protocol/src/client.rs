@@ -103,6 +103,12 @@ pub struct Status {
     /// Where the log is written.
     #[serde(default)]
     pub log_file: Option<String>,
+    /// The theme in use, and why (`Nord (following Fenix)`).
+    #[serde(default)]
+    pub theme: Option<String>,
+    /// The font family in use.
+    #[serde(default)]
+    pub font: Option<String>,
     /// Hotkey-to-frame timings, when asked for.
     #[serde(default)]
     pub timings: Option<Timings>,

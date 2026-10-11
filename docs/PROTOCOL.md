@@ -256,6 +256,8 @@ Params may be left out when every field is optional. A Status:
   "settingsErrors": [ "`appearance.width`: 5000 is out of range (400–2000); using 720" ],
   "settingsFile": "C:\\Users\\me\\AppData\\Roaming\\flint\\settings.toml",
   "logFile": "C:\\Users\\me\\AppData\\Local\\flint\\logs\\flint.log",
+  "theme": "Visual Studio Dark (following Fenix)",
+  "font": "Consolas",
   "timings": {
     "samples": [ { "source": "hotkey", "ms": 15.1, "atUnixMs": 1791731045123 } ],
     "p50Ms": 15.1,
@@ -271,6 +273,7 @@ Params may be left out when every field is optional. A Status:
 | `hotkey.state` | `registered`; `failed` (the OS refused it, `message` says why); `unsupported` (no global hotkeys here, as on Wayland) |
 | `providers` | always empty before M5 |
 | `memoryBytes` | resident memory where the OS reports it; budget 120 MB |
+| `theme`, `font` | what the window is drawn with, and why (`following Fenix`, `set in settings.toml`) |
 | `timings` | only when asked for: the last 100 shows, request to first presented frame, oldest first; budget 50 ms at p95 |
 
 `activationToken` is the `XDG_ACTIVATION_TOKEN` from the client's

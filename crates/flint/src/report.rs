@@ -23,6 +23,14 @@ pub fn status_text(status: &Status) -> String {
     if let Some(ms) = status.cold_start_ms {
         field("Cold start", format!("{ms} ms"));
     }
+    if let Some(theme) = &status.theme {
+        let font = status
+            .font
+            .as_deref()
+            .map(|f| format!(", font {f}"))
+            .unwrap_or_default();
+        field("Theme", format!("{theme}{font}"));
+    }
     if let Some(path) = &status.settings_file {
         field("Settings", path.clone());
     }
@@ -150,6 +158,8 @@ mod tests {
             settings_errors: vec![],
             settings_file: Some("C:\\flint\\settings.toml".into()),
             log_file: Some("C:\\flint\\logs\\flint.log".into()),
+            theme: Some("Nord (following Fenix)".into()),
+            font: Some("Consolas".into()),
             timings: None,
         }
     }
@@ -165,6 +175,7 @@ mod tests {
         assert!(text.contains("Hotkey     Alt+Space, registered"));
         assert!(text.contains("Memory     45.2 MB"));
         assert!(text.contains("Providers  none"));
+        assert!(text.contains("Theme      Nord (following Fenix), font Consolas"));
         assert!(!text.contains("Timings"));
     }
 

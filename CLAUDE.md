@@ -3,8 +3,9 @@
 Flint is a keyboard-first launcher for Windows and Linux, the front door
 to Fenix (https://github.com/tpedneault/fenix) and the tools built around
 it. The design is settled; M0 (workspace), M1 (daemon, endpoint, CLI,
-hotkey, window) and M2 (search, modes, apps, quicklinks, frecency) are in
-place, and the milestones from M3 fill in the rest.
+hotkey, window), M2 (search, modes, apps, quicklinks, frecency) and M3
+(Fenix level 0: projects, recent files, theme) are in place, and the
+milestones from M4 fill in the rest.
 
 ## Read first, in this order
 
