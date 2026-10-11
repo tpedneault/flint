@@ -1,8 +1,8 @@
 //! What the daemon says about itself: `flint status` as text, and the
-//! window's static list and footer notice for M1. Pure functions of a
-//! [`Status`], so the wording is tested without a daemon.
+//! footer's standing notice. Pure functions of a [`Status`], so the
+//! wording is tested without a daemon.
 
-use flint_gui::{FooterLine, Row};
+use flint_gui::FooterLine;
 use flint_protocol::client::{HotkeyState, Status};
 
 /// `flint status`, as printed.
@@ -37,7 +37,7 @@ pub fn status_text(status: &Status) -> String {
             status
                 .providers
                 .iter()
-                .map(|p| format!("{} ({})", p.name, p.state))
+                .map(|p| format!("{} ({})", p.name, p.message.as_deref().unwrap_or(&p.state)))
                 .collect::<Vec<_>>()
                 .join(", ")
         },
@@ -97,39 +97,6 @@ fn duration(ms: u64) -> String {
         60..=3599 => format!("{} min", secs / 60),
         _ => format!("{} h {} min", secs / 3600, secs % 3600 / 60),
     }
-}
-
-/// The window's list in M1: facts about the daemon, since there is
-/// nothing to search yet.
-pub fn rows(status: &Status) -> Vec<Row> {
-    let row = |title: &str, subtitle: String| Row {
-        title: title.to_owned(),
-        subtitle,
-    };
-    let mut rows = vec![
-        row(
-            &format!("Flint {}", status.version),
-            format!("running, pid {}", status.pid),
-        ),
-        row("Hotkey", hotkey(status)),
-        row("GPU", gpu(status)),
-    ];
-    if let Some(path) = &status.settings_file {
-        let problems = match status.settings_errors.len() {
-            0 => String::new(),
-            1 => ", 1 problem".into(),
-            n => format!(", {n} problems"),
-        };
-        rows.push(row("Settings", format!("{path}{problems}")));
-    }
-    if let Some(path) = &status.log_file {
-        rows.push(row("Log", path.clone()));
-    }
-    rows.push(row(
-        "Next",
-        "searching apps and quicklinks arrives in M2".into(),
-    ));
-    rows
 }
 
 /// The footer's standing notice: what is wrong, if anything, in one line.
@@ -246,9 +213,6 @@ mod tests {
             notice(&s).unwrap().text,
             "one (and 2 more; `flint reload` lists them)"
         );
-        assert!(rows(&s)
-            .iter()
-            .any(|r| r.subtitle.ends_with(", 3 problems")));
     }
 
     #[test]

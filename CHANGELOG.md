@@ -38,3 +38,16 @@ All notable changes to Flint are recorded here. The format follows
   frame, and `flint status --timings` prints the last 100 with p50/p95.
 - A software GPU fallback (WARP, llvmpipe), so Flint starts in VMs and RDP
   sessions without a usable GPU.
+- Search: type to find installed apps (Start Menu shortcuts on Windows,
+  `.desktop` files on Linux), quicklinks and Flint's own commands, with
+  matched letters highlighted and `Enter` to launch or open. Results are
+  ranked by match and by what you picked before for queries starting the
+  same way, and don't move under the selection when new ones arrive.
+- Fenix's Insert/Normal modes in the window: `Esc` goes to Normal mode
+  (`j`/`k`, `gg`/`G`, `y` to copy, `q` to hide); `behaviour.escape_hides`
+  makes one `Esc` hide instead.
+- Scope keywords: `a ` for apps, `flint ` for Flint's commands, and each
+  quicklink's keyword, shown as a chip.
+- `[[quicklinks]]` in `settings.toml`: `j ABC-123` opens
+  `https://jira.example.com/browse/ABC-123`.
+- A keystroke benchmark over 100k candidates gates CI.

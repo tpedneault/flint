@@ -9,7 +9,7 @@ This document is the design the first implementation follows. The wire
 protocol is in [PROTOCOL.md](PROTOCOL.md); what Flint needs from Fenix,
 and what Fenix has to add, is in [FENIX-INTEGRATION.md](FENIX-INTEGRATION.md).
 
-Status: M1 implemented (see [ARCHITECTURE.md](ARCHITECTURE.md)). Pinned against Fenix
+Status: M2 implemented (see [ARCHITECTURE.md](ARCHITECTURE.md)). Pinned against Fenix
 `f05780740b7d45e41eedc35b846dba7c832f4d49` (2026-10-11).
 
 ## Why the name
@@ -242,7 +242,9 @@ One Dark, Visual Studio Dark. An unknown name falls back to Orbit Dark.
 Each candidate gets `score = match_score × w_match + frecency(item, query_prefix) × w_frec + provider_boost + context_boost`.
 
 - **Match**: `nucleo-matcher` with smart case and path-aware bonuses for
-  file items.
+  file items, fuzzily on the title. Keywords and subtitles match by
+  substring at half weight (decided in M2: fuzzy matching across a
+  subtitle's many words matched nearly anything).
 - **Frecency**: keyed by `(item id, first two characters of the query)`;
   each pick adds 1, values decay with a 7-day half-life. Stored in Flint's
   state folder through `fenix_storage::state` (a small JSON file, atomic
@@ -370,6 +372,12 @@ long as the daemon and is rebuilt (not grown) on reload.
 - **Apps**: resolve `.lnk` targets lazily (only when needed for display or
   launch); launch through `ShellExecuteExW` on the `.lnk` itself so
   arguments, working directory and "run as" settings are honoured.
+  (M2 never resolves them: the name, folder and the shortcut itself are
+  enough to list and launch.) Packaged apps (Microsoft Store / MSIX:
+  Calculator, Windows Terminal, Settings, Photos) have no `.lnk` in those
+  folders, so the Apps provider doesn't list them yet; listing them means
+  enumerating the shell's `AppsFolder` (COM) and launching by
+  AppUserModelID. Found in M2 testing; a follow-up for `flint-platform`.
 - **Autostart**: opt-in, `flint autostart on|off`, writing
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. No scheduled task,
   no service.

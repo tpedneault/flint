@@ -18,6 +18,7 @@ workspace = true
 # graph. The library crates depend on each other only once they use each
 # other; docs/ARCHITECTURE.md has the intended edges.
 [dependencies]
+fenix-storage = { workspace = true }
 flint-config = { path = "../flint-config" }
 flint-fenix = { path = "../flint-fenix" }
 flint-gui = { path = "../flint-gui" }

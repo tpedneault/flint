@@ -24,7 +24,7 @@ pub struct Palette {
     pub foreground: [f32; 4],
     /// Subtitles, the placeholder and the footer (Fenix's `gutter_fg`).
     pub muted: [f32; 4],
-    /// The caret and highlights (Fenix's `caret`).
+    /// Match highlights (Fenix's `caret`).
     pub accent: [f32; 4],
     /// The selected row (Fenix's `selection`).
     pub selection: [f32; 4],
@@ -32,6 +32,14 @@ pub struct Palette {
     pub border: [f32; 4],
     /// Errors in the footer (Fenix's `git_conflicted` red).
     pub error: [f32; 4],
+    /// The mode badge and caret in Insert mode (Fenix's `mode_insert`).
+    pub mode_insert: [f32; 4],
+    /// The mode badge and caret in Normal mode (Fenix's `mode_normal`).
+    pub mode_normal: [f32; 4],
+    /// Text on a mode badge or the scope chip (Fenix's `mode_text_dark`).
+    pub badge_text: [f32; 4],
+    /// The scope chip (Fenix's `syntax_function` blue).
+    pub chip: [f32; 4],
 }
 
 const fn rgba(hex: u32) -> [f32; 4] {
@@ -56,6 +64,10 @@ pub const ORBIT_DARK: Palette = Palette {
     selection: rgba_alpha(0x7aa2f7, 0.12),
     border: rgba(0x222534),
     error: rgba(0xf7768e),
+    mode_insert: rgba(0x7dcfff),
+    mode_normal: rgba(0xe0af68),
+    badge_text: rgba(0x1a1b26),
+    chip: rgba(0x7aa2f7),
 };
 
 /// Converts a palette colour for glyphon.

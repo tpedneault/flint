@@ -1,6 +1,12 @@
 //! Draws one frame: the launcher's state, laid out by [`Layout`], in the
 //! palette's colours.
 //!
+//! The query line holds the scope chip (when the query is scoped), the
+//! query with its caret, and the mode badge at the right; the caret is a
+//! bar in Insert mode and a block in Normal mode, in that mode's colour,
+//! as in Fenix. Each row shows its title with matched characters in the
+//! highlight colour, its subtitle dimmed, and its provider at the right.
+//!
 //! Text goes through glyphon as in Fenix, in the same monospace family
 //! Fenix picks by default, so the two look alike until M3 follows Fenix's
 //! own `editor.font_family`. Loading the system's fonts is the slowest
@@ -13,7 +19,7 @@ use glyphon::{
 };
 
 use crate::gpu::{Gpu, Surface};
-use crate::launcher::Launcher;
+use crate::launcher::{Launcher, Mode};
 use crate::layout::{self, Layout, Rect};
 use crate::rect::Rects;
 use crate::theme::{text_color, Palette};
@@ -33,9 +39,52 @@ pub struct Renderer {
     atlas: TextAtlas,
     text: TextRenderer,
     family: String,
+    chip: Buffer,
     query: Buffer,
-    rows: Vec<Buffer>,
+    mode: Buffer,
+    rows: Vec<(Buffer, Buffer)>,
+    empty: Buffer,
     footer: Buffer,
+}
+
+fn buffer(font_system: &mut FontSystem, size: f32) -> Buffer {
+    let mut b = Buffer::new(font_system, Metrics::new(size, size * LINE));
+    b.set_wrap(Wrap::None);
+    b
+}
+
+/// The width of a shaped one-line buffer.
+fn width_of(buffer: &Buffer) -> f32 {
+    buffer
+        .layout_runs()
+        .map(|run| run.line_w)
+        .fold(0.0, f32::max)
+}
+
+/// Splits `title` into runs of matched and unmatched characters, given
+/// the matched character positions (ascending).
+pub fn spans<'a>(title: &'a str, highlights: &[u32]) -> Vec<(&'a str, bool)> {
+    let mut out: Vec<(&'a str, bool)> = Vec::new();
+    let mut matched = highlights.iter().copied().peekable();
+    let mut start = 0;
+    let mut current = None;
+    for (n, (byte, _)) in title.char_indices().enumerate() {
+        while matched.peek().is_some_and(|&m| (m as usize) < n) {
+            matched.next();
+        }
+        let is_match = matched.peek() == Some(&(n as u32));
+        if current != Some(is_match) {
+            if let Some(was) = current {
+                out.push((&title[start..byte], was));
+            }
+            start = byte;
+            current = Some(is_match);
+        }
+    }
+    if let Some(was) = current {
+        out.push((&title[start..], was));
+    }
+    out
 }
 
 impl Renderer {
@@ -52,25 +101,22 @@ impl Renderer {
             wgpu::MultisampleState::default(),
             None,
         );
-        let buffer = |font_system: &mut FontSystem, size: f32| {
-            let mut b = Buffer::new(font_system, Metrics::new(size, size * LINE));
-            b.set_wrap(Wrap::None);
-            b
-        };
-        let query = buffer(&mut font_system, layout::QUERY_FONT);
-        let footer = buffer(&mut font_system, layout::FOOTER_FONT);
+        let fs = &mut font_system;
         Renderer {
             format,
             rects: Rects::new(&gpu.device, format),
+            chip: buffer(fs, layout::FOOTER_FONT),
+            query: buffer(fs, layout::QUERY_FONT),
+            mode: buffer(fs, layout::FOOTER_FONT),
+            empty: buffer(fs, layout::ROW_FONT),
+            footer: buffer(fs, layout::FOOTER_FONT),
+            rows: Vec::new(),
             font_system,
             swash: SwashCache::new(),
             viewport,
             atlas,
             text,
             family,
-            query,
-            rows: Vec::new(),
-            footer,
         }
     }
 
@@ -96,18 +142,197 @@ impl Renderer {
         };
         let (width, height) = (surface.config.width as f32, surface.config.height as f32);
         let px = |r: Rect| r.scaled(scale);
+        let pad = layout::PAD * scale;
+        let gap = 8.0 * scale;
+        let attrs = Attrs::new().family(Family::Name(&self.family));
+        let colored = |c: [f32; 4]| attrs.clone().color(text_color(c));
+        let fs = &mut self.font_system;
+        let shape =
+            |b: &mut Buffer, fs: &mut FontSystem, size: f32, text: &str, color: [f32; 4]| {
+                b.set_metrics(Metrics::new(size, size * LINE));
+                b.set_size(None, None);
+                b.set_text(text, &colored(color), Shaping::Advanced, None);
+                b.shape_until_scroll(fs, false);
+                width_of(b)
+            };
 
-        // Rectangles.
         self.rects.clear();
-        let mut rect = |r: Rect, color| self.rects.push(r, color, width, height);
-        rect(px(layout.query), palette.surface);
-        rect(px(layout.footer), palette.surface);
-        if !launcher.rows().is_empty() {
-            rect(
-                px(layout.row(launcher.selected().min(layout.rows - 1))),
-                palette.selection,
-            );
+        let mut areas_spec: Vec<(Which, f32, f32, f32)> = Vec::new(); // (buffer, left, top, right)
+
+        // The query line: chip, query, caret, mode badge.
+        let q = px(layout.query);
+        rect(&mut self.rects, q, palette.surface, width, height);
+        let small = layout::FOOTER_FONT * scale;
+        let small_top = q.y + (q.h - small * LINE) / 2.0;
+        let (mode_text, mode_color) = match launcher.mode() {
+            Mode::Insert => ("INSERT", palette.mode_insert),
+            Mode::Normal => ("NORMAL", palette.mode_normal),
+        };
+        let mode_w = shape(&mut self.mode, fs, small, mode_text, palette.badge_text);
+        let badge_pad = 6.0 * scale;
+        let mode_left = width - pad - mode_w - 2.0 * badge_pad;
+        let badge_rect = Rect {
+            x: mode_left,
+            y: small_top - 2.0 * scale,
+            w: mode_w + 2.0 * badge_pad,
+            h: small * LINE + 4.0 * scale,
+        };
+        rect(&mut self.rects, badge_rect, mode_color, width, height);
+        areas_spec.push((Which::Mode, mode_left + badge_pad, small_top, width - pad));
+
+        let mut query_left = pad;
+        if let Some(chip) = launcher.scope() {
+            let chip_w = shape(&mut self.chip, fs, small, &chip.label, palette.badge_text);
+            let chip_rect = Rect {
+                x: pad,
+                y: small_top - 2.0 * scale,
+                w: chip_w + 2.0 * badge_pad,
+                h: small * LINE + 4.0 * scale,
+            };
+            rect(&mut self.rects, chip_rect, palette.chip, width, height);
+            areas_spec.push((Which::Chip, pad + badge_pad, small_top, pad + chip_rect.w));
+            query_left = pad + chip_rect.w + gap;
         }
+        let query_size = layout::QUERY_FONT * scale;
+        let (text, color) = if launcher.query().is_empty() {
+            (PLACEHOLDER, palette.muted)
+        } else {
+            (launcher.query(), palette.foreground)
+        };
+        let shaped = shape(&mut self.query, fs, query_size, text, color);
+        let typed = if launcher.query().is_empty() {
+            0.0
+        } else {
+            shaped
+        };
+        let query_top = q.y + (q.h - query_size * LINE) / 2.0;
+        areas_spec.push((Which::Query, query_left, query_top, mode_left - gap));
+        let caret = match launcher.mode() {
+            Mode::Insert => Rect {
+                x: query_left + typed,
+                y: query_top + query_size * 0.1,
+                w: (2.0 * scale).round().max(1.0),
+                h: query_size * 1.05,
+            },
+            Mode::Normal => Rect {
+                x: query_left + typed,
+                y: query_top + query_size * 0.1,
+                w: query_size * 0.6,
+                h: query_size * 1.05,
+            },
+        };
+        let mut caret_color = match launcher.mode() {
+            Mode::Insert => palette.mode_insert,
+            Mode::Normal => palette.mode_normal,
+        };
+        if launcher.mode() == Mode::Normal {
+            caret_color[3] = 0.5;
+        }
+        rect(&mut self.rects, caret, caret_color, width, height);
+
+        // Rows.
+        let row_size = layout::ROW_FONT * scale;
+        let visible = launcher
+            .rows()
+            .len()
+            .saturating_sub(launcher.top())
+            .min(layout.rows);
+        while self.rows.len() < visible {
+            self.rows.push((
+                buffer(fs, layout::ROW_FONT),
+                buffer(fs, layout::FOOTER_FONT),
+            ));
+        }
+        if visible > 0 {
+            let selected = launcher.selected().saturating_sub(launcher.top());
+            if selected < visible {
+                rect(
+                    &mut self.rects,
+                    px(layout.row(selected)),
+                    palette.selection,
+                    width,
+                    height,
+                );
+            }
+        }
+        for i in 0..visible {
+            let row = &launcher.rows()[launcher.top() + i];
+            let r = px(layout.row(i));
+            let (title_buffer, badge_buffer) = &mut self.rows[i];
+            let badge_w = shape(badge_buffer, fs, small, &row.badge, palette.muted);
+            let badge_left = width - pad - badge_w;
+            areas_spec.push((
+                Which::Badge(i),
+                badge_left,
+                r.y + (r.h - small * LINE) / 2.0,
+                width - pad,
+            ));
+
+            let mut rich: Vec<(&str, Attrs)> = spans(&row.title, &row.highlights)
+                .into_iter()
+                .map(|(text, hit)| {
+                    (
+                        text,
+                        colored(if hit {
+                            palette.accent
+                        } else {
+                            palette.foreground
+                        }),
+                    )
+                })
+                .collect();
+            if !row.subtitle.is_empty() {
+                rich.push(("   ", colored(palette.muted)));
+                rich.push((row.subtitle.as_str(), colored(palette.muted)));
+            }
+            title_buffer.set_metrics(Metrics::new(row_size, row_size * LINE));
+            title_buffer.set_size(None, None);
+            title_buffer.set_rich_text(rich, &attrs, Shaping::Advanced, None);
+            title_buffer.shape_until_scroll(fs, false);
+            areas_spec.push((
+                Which::Row(i),
+                pad,
+                r.y + (r.h - row_size * LINE) / 2.0,
+                badge_left - gap,
+            ));
+        }
+        if launcher.rows().is_empty()
+            && (!launcher.query().is_empty() || launcher.scope().is_some())
+        {
+            let r = px(layout.row(0));
+            shape(
+                &mut self.empty,
+                fs,
+                row_size,
+                "Nothing matches",
+                palette.muted,
+            );
+            areas_spec.push((
+                Which::Empty,
+                pad,
+                r.y + (r.h - row_size * LINE) / 2.0,
+                width - pad,
+            ));
+        }
+
+        // Footer.
+        let f = px(layout.footer);
+        rect(&mut self.rects, f, palette.surface, width, height);
+        let line = launcher.footer();
+        let footer_color = if line.error {
+            palette.error
+        } else {
+            palette.muted
+        };
+        shape(&mut self.footer, fs, small, &line.text, footer_color);
+        areas_spec.push((
+            Which::Footer,
+            pad,
+            f.y + (f.h - small * LINE) / 2.0,
+            width - pad,
+        ));
+
+        // The window's edge, over everything.
         let border = (layout::BORDER * scale).max(1.0);
         for edge in [
             Rect {
@@ -135,126 +360,34 @@ impl Renderer {
                 h: height,
             },
         ] {
-            rect(edge, palette.border);
+            rect(&mut self.rects, edge, palette.border, width, height);
         }
 
-        // Text.
-        let pad = layout::PAD * scale;
-        let inner = (width - 2.0 * pad).max(1.0);
-        let attrs = Attrs::new().family(Family::Name(&self.family));
-        let fs = &mut self.font_system;
-
-        let query_size = layout::QUERY_FONT * scale;
-        self.query
-            .set_metrics(Metrics::new(query_size, query_size * LINE));
-        self.query.set_size(Some(inner), None);
-        let (text, color) = if launcher.query().is_empty() {
-            (PLACEHOLDER, palette.muted)
-        } else {
-            (launcher.query(), palette.foreground)
-        };
-        self.query.set_text(
-            text,
-            &attrs.clone().color(text_color(color)),
-            Shaping::Advanced,
-            None,
-        );
-        self.query.shape_until_scroll(fs, false);
-        let query_top = px(layout.query).y + (px(layout.query).h - query_size * LINE) / 2.0;
-        let typed_width = if launcher.query().is_empty() {
-            0.0
-        } else {
-            self.query
-                .layout_runs()
-                .map(|run| run.line_w)
-                .fold(0.0, f32::max)
-        };
-        // The caret, after what was typed.
-        self.rects.push(
-            Rect {
-                x: pad + typed_width,
-                y: query_top + query_size * 0.1,
-                w: (2.0 * scale).round().max(1.0),
-                h: query_size * 1.05,
-            },
-            palette.accent,
-            width,
-            height,
-        );
-
-        let row_size = layout::ROW_FONT * scale;
-        let shown = launcher.rows().len().min(layout.rows);
-        while self.rows.len() < shown {
-            let mut b = Buffer::new(fs, Metrics::new(row_size, row_size * LINE));
-            b.set_wrap(Wrap::None);
-            self.rows.push(b);
-        }
-        for (buffer, row) in self.rows.iter_mut().zip(launcher.rows()) {
-            buffer.set_metrics(Metrics::new(row_size, row_size * LINE));
-            buffer.set_size(Some(inner), None);
-            let title = attrs.clone().color(text_color(palette.foreground));
-            let subtitle = attrs.clone().color(text_color(palette.muted));
-            buffer.set_rich_text(
-                [
-                    (row.title.as_str(), title),
-                    ("   ", subtitle.clone()),
-                    (row.subtitle.as_str(), subtitle),
-                ],
-                &attrs,
-                Shaping::Advanced,
-                None,
-            );
-            buffer.shape_until_scroll(fs, false);
-        }
-
-        let footer_size = layout::FOOTER_FONT * scale;
-        let line = launcher.footer();
-        self.footer
-            .set_metrics(Metrics::new(footer_size, footer_size * LINE));
-        self.footer.set_size(Some(inner), None);
-        let footer_color = if line.error {
-            palette.error
-        } else {
-            palette.muted
-        };
-        self.footer.set_text(
-            &line.text,
-            &attrs.clone().color(text_color(footer_color)),
-            Shaping::Advanced,
-            None,
-        );
-        self.footer.shape_until_scroll(fs, false);
-
-        let bounds = TextBounds {
-            left: pad as i32,
-            top: 0,
-            right: (width - pad) as i32,
-            bottom: height as i32,
-        };
-        let area = |buffer, top: f32, color| TextArea {
-            buffer,
-            left: pad,
-            top,
-            scale: 1.0,
-            bounds,
-            default_color: text_color(color),
-            custom_glyphs: &[],
-        };
-        let mut areas = vec![area(&self.query, query_top, palette.foreground)];
-        for (i, buffer) in self.rows.iter().take(shown).enumerate() {
-            let r = px(layout.row(i));
-            areas.push(area(
+        let areas = areas_spec.into_iter().map(|(which, left, top, right)| {
+            let buffer = match which {
+                Which::Chip => &self.chip,
+                Which::Query => &self.query,
+                Which::Mode => &self.mode,
+                Which::Row(i) => &self.rows[i].0,
+                Which::Badge(i) => &self.rows[i].1,
+                Which::Empty => &self.empty,
+                Which::Footer => &self.footer,
+            };
+            TextArea {
                 buffer,
-                r.y + (r.h - row_size * LINE) / 2.0,
-                palette.foreground,
-            ));
-        }
-        let f = px(layout.footer);
-        areas.push(area(
-            &self.footer,
-            f.y + (f.h - footer_size * LINE) / 2.0,
-            palette.muted,
-        ));
+                left,
+                top,
+                scale: 1.0,
+                bounds: TextBounds {
+                    left: left as i32,
+                    top: 0,
+                    right: right.max(left) as i32,
+                    bottom: height as i32,
+                },
+                default_color: text_color(palette.foreground),
+                custom_glyphs: &[],
+            }
+        });
 
         self.viewport.update(
             &gpu.queue,
@@ -268,7 +401,7 @@ impl Renderer {
             .prepare(
                 &gpu.device,
                 &gpu.queue,
-                fs,
+                &mut self.font_system,
                 &mut self.atlas,
                 &self.viewport,
                 areas,
@@ -276,8 +409,8 @@ impl Renderer {
             )
             .is_err()
         {
-            // The atlas is full: drop what this frame doesn't use and try
-            // once more; a frame without text is better than none.
+            // The atlas is full: drop what this frame doesn't use; a frame
+            // without some text is better than none.
             self.atlas.trim();
         }
         self.rects.upload(&gpu.device, &gpu.queue);
@@ -318,6 +451,22 @@ impl Renderer {
     }
 }
 
+/// Which buffer a text area draws.
+#[derive(Clone, Copy)]
+enum Which {
+    Chip,
+    Query,
+    Mode,
+    Row(usize),
+    Badge(usize),
+    Empty,
+    Footer,
+}
+
+fn rect(rects: &mut Rects, r: Rect, color: [f32; 4], width: f32, height: f32) {
+    rects.push(r, color, width, height);
+}
+
 /// The monospace family Fenix would pick: the system's own, then the
 /// common ones by name, whichever is installed. A name is no proof a font
 /// exists, so each is checked in the font database.
@@ -341,4 +490,29 @@ fn monospace_family(font_system: &FontSystem) -> String {
         }
     }
     db.family_name(&Family::Monospace).to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spans_split_matched_runs() {
+        assert_eq!(
+            spans("Firefox", &[0, 1, 4]),
+            [("Fi", true), ("re", false), ("f", true), ("ox", false)]
+        );
+        assert_eq!(spans("abc", &[]), [("abc", false)]);
+        assert_eq!(spans("", &[0]), Vec::<(&str, bool)>::new());
+        assert_eq!(
+            spans("éa", &[1]),
+            [("é", false), ("a", true)],
+            "positions are characters, not bytes"
+        );
+        assert_eq!(
+            spans("ab", &[5]),
+            [("ab", false)],
+            "positions past the end are ignored"
+        );
+    }
 }

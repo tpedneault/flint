@@ -10,7 +10,7 @@ different; everything else keeps its default.
 |---|---|---|
 | Your settings, `settings.toml` | `%AppData%\flint` | `~/.config/flint` |
 | The log, `flint.log` (and `flint.log.old`) | `%LocalAppData%\flint\logs` | `~/.local/state/flint/logs` |
-| This machine's state (from M2: frecency) | `%LocalAppData%\flint\state` | `~/.local/state/flint/state` |
+| This machine's state: `frecency.json`, what you pick for what you type | `%LocalAppData%\flint\state` | `~/.local/state/flint/state` |
 
 What you chose roams with your Windows profile; what Flint noticed about
 this machine doesn't. The layout is Fenix's, under `flint` instead of
@@ -26,7 +26,9 @@ uses.
 
 ## settings.toml
 
-Hand-edit it; Flint never writes it. Changes are picked up the next time
+Hand-edit it. Flint never changes it; the only file it creates there is
+an empty `settings.toml` (with a comment pointing here) when you choose
+*Open settings* and there isn't one yet. Changes are picked up the next time
 Flint is shown, or at once with `flint reload`, which also prints any
 problems:
 
@@ -52,6 +54,22 @@ rows = 7
 
 [behaviour]
 hide_on_blur = true
+escape_hides = false
+
+[[quicklinks]]
+keyword = "j"
+name = "Jira issue"
+url = "https://jira.example.com/browse/{query}"
+
+[[quicklinks]]
+keyword = "mr"
+name = "GitLab merge requests"
+url = "https://gitlab.example.com/dashboard/merge_requests?search={query}"
+
+[[quicklinks]]
+keyword = "w"
+name = "Outlook"
+url = "https://outlook.office.com"
 ```
 
 ### Every setting
@@ -65,6 +83,23 @@ it is out of date.
 | `appearance.width` | a whole number, 400–2000 | `720` | The window's width, in logical pixels (scaled with the display). |
 | `appearance.rows` | a whole number, 1–30 | `9` | How many results are shown at once; the window's height follows. |
 | `behaviour.hide_on_blur` | `true` or `false` | `true` | Hide Flint when it loses focus, as when you click another window. |
+| `behaviour.escape_hides` | `true` or `false` | `false` | Make `Esc` hide Flint from either mode, as Raycast does. By default `Esc` in Insert mode goes to Normal mode, where a second `Esc` (or `q`) hides. |
+| `quicklinks` | entries with `keyword`, `name`, `url` | `[]` | Links with a keyword: typing the keyword and a space scopes the query to the link, and `Enter` opens `url` with `{query}` replaced by what you typed, percent-encoded. A link without `{query}` just opens. Written as `[[quicklinks]]` tables (see the example above). |
+
+### Quicklinks
+
+Each `[[quicklinks]]` table is a link Flint can open. Type its keyword and
+a space and the query line shows the link's name as a chip; what you type
+next fills `{query}` in the URL, percent-encoded (`j ABC-123` opens
+`https://jira.example.com/browse/ABC-123`). Without a keyword the link is
+still found by its name, and choosing it puts its keyword in the query
+line for you. A URL without `{query}` simply opens.
+
+- `keyword` must be one word, unique among your links. `a` and `flint`
+  belong to Flint's Apps and Flint commands; a link that names one keeps
+  working by name, and `flint status` says why its keyword doesn't.
+- `url` needs a scheme (`https:`, `mailto:`, …).
+- A bad entry is skipped with its reason; the others still work.
 
 ### Key chords
 
@@ -89,8 +124,7 @@ gets it instead. If you rely on that menu, pick another chord.
 
 ## Settings that arrive later
 
-The design names more settings (`behaviour.escape_hides`,
-`appearance.theme`, `[fenix]`, `[[quicklinks]]`, `[leader]`,
-`[[providers]]`). Each joins this page with the milestone that makes it
-do something; until then Flint reports it as unknown rather than silently
-accepting a key that does nothing.
+The design names more settings (`appearance.theme` and `[fenix]` in M3,
+`[leader]` in M4, `[[providers]]` in M5). Each joins this page with the
+milestone that makes it do something; until then Flint reports it as
+unknown rather than silently accepting a key that does nothing.

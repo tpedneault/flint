@@ -40,6 +40,9 @@ try {
     Invoke-Gate 'clippy' 'cargo' @('clippy', '--locked', '--workspace', '--all-targets', '--', '-D', 'warnings')
     Invoke-Gate 'tests' 'cargo' @('test', '--locked', '--workspace', '--no-fail-fast')
     Invoke-Gate 'build' 'cargo' @('build', '--locked', '-p', 'flint')
+    # The keystroke budget (DESIGN.md, "Performance budget"): 100k candidates,
+    # p95 must stay within 16 ms + 50%. Release, or the numbers mean nothing.
+    Invoke-Gate 'bench' 'cargo' @('run', '--locked', '--release', '-p', 'flint-index', '--example', 'bench', '--', '--gate')
     Write-Host "All gates passed. Logs: $logRoot"
 } finally {
     $results | ConvertTo-Json -Depth 4 -AsArray | Set-Content -LiteralPath (Join-Path $logRoot 'summary.json') -Encoding utf8

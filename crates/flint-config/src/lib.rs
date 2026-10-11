@@ -44,6 +44,21 @@ pub struct Settings {
     pub rows: u32,
     /// `behaviour.hide_on_blur`.
     pub hide_on_blur: bool,
+    /// `behaviour.escape_hides`.
+    pub escape_hides: bool,
+    /// `[[quicklinks]]`, in file order, keywords unique.
+    pub quicklinks: Vec<Quicklink>,
+}
+
+/// One `[[quicklinks]]` entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Quicklink {
+    /// Typed with a space to scope the query to this link.
+    pub keyword: String,
+    /// Shown as the item's title.
+    pub name: String,
+    /// Opened, with `{query}` replaced by the query, percent-encoded.
+    pub url: String,
 }
 
 impl Default for Settings {
@@ -53,6 +68,8 @@ impl Default for Settings {
             width: 720,
             rows: 9,
             hide_on_blur: true,
+            escape_hides: false,
+            quicklinks: Vec::new(),
         }
     }
 }
@@ -124,8 +141,13 @@ pub fn parse(text: &str) -> Loaded {
             errors.push(format!("`{key}` isn't a setting; it is ignored"));
             continue;
         };
-        if let Err(why) = setting.apply(&mut settings, value) {
-            errors.push(format!("`{key}`: {why}; using {}", setting.default));
+        match setting.apply(&mut settings, value) {
+            Ok(dropped) => errors.extend(
+                dropped
+                    .into_iter()
+                    .map(|why| format!("`{key}` {why}; it is ignored")),
+            ),
+            Err(why) => errors.push(format!("`{key}`: {why}; using {}", setting.default)),
         }
     }
     Loaded {
@@ -136,7 +158,7 @@ pub fn parse(text: &str) -> Loaded {
 }
 
 /// Every key that isn't a table, with its dotted path. Arrays of tables
-/// (`[[quicklinks]]`) are leaves: no setting is inside one yet.
+/// (`[[quicklinks]]`) are leaves: the setting checks its entries.
 fn collect_leaves<'a>(
     table: &'a toml::Table,
     prefix: &str,
@@ -216,13 +238,32 @@ mod tests {
 
     #[test]
     fn unknown_keys_are_reported_not_fatal() {
-        let loaded = parse("[appearance]\nwidht = 800\n[[quicklinks]]\nkeyword = \"j\"\n");
+        let loaded = parse("[appearance]\nwidht = 800\n[[leader]]\nkeys = \"p\"\n");
         assert_eq!(loaded.settings, Settings::default());
         assert!(loaded
             .errors
             .iter()
             .any(|e| e.contains("`appearance.widht`")));
-        assert!(loaded.errors.iter().any(|e| e.contains("`quicklinks`")));
+        assert!(loaded.errors.iter().any(|e| e.contains("`leader`")));
+    }
+
+    #[test]
+    fn a_bad_quicklink_is_dropped_with_its_reason() {
+        let loaded = parse(
+            "[[quicklinks]]
+keyword = \"j\"
+name = \"Jira\"
+url = \"https://j/{query}\"
+             [[quicklinks]]
+keyword = \"w\"
+url = \"https://w\"
+",
+        );
+        assert_eq!(loaded.settings.quicklinks.len(), 1);
+        assert_eq!(
+            loaded.errors,
+            ["`quicklinks` entry 2: no `name`; it is ignored"]
+        );
     }
 
     #[test]

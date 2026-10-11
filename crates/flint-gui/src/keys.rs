@@ -1,27 +1,27 @@
-//! Turns winit's key events into [`Input`]s. Pure, so the mapping (and
-//! its awkward corners, like AltGr) is tested without a window.
+//! Turns winit's key events into [`Press`]es. Pure, so the mapping (and
+//! its awkward corners, like AltGr) is tested without a window. What a
+//! press means depends on the mode, which is the launcher's business.
 
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
-use crate::launcher::Input;
+use crate::launcher::Press;
 
-/// The inputs one key press produces: usually zero or one, more when an
+/// The presses one key event produces: usually zero or one, more when an
 /// input method commits several characters at once.
-pub fn inputs(key: &Key, mods: ModifiersState) -> Vec<Input> {
+pub fn presses(key: &Key, mods: ModifiersState) -> Vec<Press> {
     let ctrl = mods.control_key();
     let alt = mods.alt_key();
     match key {
-        Key::Named(named) => named_input(*named, ctrl).into_iter().collect(),
+        Key::Named(named) => named_press(*named, ctrl).into_iter().collect(),
         Key::Character(text) => {
             // AltGr arrives as Ctrl+Alt on Windows, and is how many
             // layouts type `@`, `{` or `€`: that is text, not a shortcut.
             if ctrl && !alt {
                 let mut chars = text.chars();
-                return match (chars.next().map(|c| c.to_ascii_lowercase()), chars.next()) {
-                    (Some('n'), None) => vec![Input::Down],
-                    (Some('p'), None) => vec![Input::Up],
-                    (Some('w'), None) => vec![Input::DeleteWord],
-                    (Some('u'), None) => vec![Input::Clear],
+                return match (chars.next(), chars.next()) {
+                    (Some(c), None) if c.is_ascii_alphabetic() => {
+                        vec![Press::Ctrl(c.to_ascii_lowercase())]
+                    }
                     _ => Vec::new(),
                 };
             }
@@ -30,22 +30,23 @@ pub fn inputs(key: &Key, mods: ModifiersState) -> Vec<Input> {
             }
             text.chars()
                 .filter(|c| !c.is_control())
-                .map(Input::Char)
+                .map(Press::Char)
                 .collect()
         }
         _ => Vec::new(),
     }
 }
 
-fn named_input(key: NamedKey, ctrl: bool) -> Option<Input> {
+fn named_press(key: NamedKey, ctrl: bool) -> Option<Press> {
     Some(match key {
-        NamedKey::Escape => Input::Escape,
-        NamedKey::Enter => Input::Submit,
-        NamedKey::Backspace if ctrl => Input::DeleteWord,
-        NamedKey::Backspace => Input::Backspace,
-        NamedKey::ArrowUp => Input::Up,
-        NamedKey::ArrowDown => Input::Down,
-        NamedKey::Space if !ctrl => Input::Char(' '),
+        NamedKey::Escape => Press::Escape,
+        NamedKey::Enter => Press::Enter,
+        NamedKey::Backspace if ctrl => Press::CtrlBackspace,
+        NamedKey::Backspace => Press::Backspace,
+        NamedKey::ArrowUp => Press::Up,
+        NamedKey::ArrowDown => Press::Down,
+        NamedKey::Tab => Press::Tab,
+        NamedKey::Space if !ctrl => Press::Char(' '),
         _ => return None,
     })
 }
@@ -54,43 +55,40 @@ fn named_input(key: NamedKey, ctrl: bool) -> Option<Input> {
 mod tests {
     use super::*;
 
-    fn ch(s: &str, mods: ModifiersState) -> Vec<Input> {
-        inputs(&Key::Character(s.into()), mods)
+    fn ch(s: &str, mods: ModifiersState) -> Vec<Press> {
+        presses(&Key::Character(s.into()), mods)
     }
 
     #[test]
     fn plain_text_is_typed() {
-        assert_eq!(ch("a", ModifiersState::empty()), [Input::Char('a')]);
-        assert_eq!(ch("A", ModifiersState::SHIFT), [Input::Char('A')]);
+        assert_eq!(ch("a", ModifiersState::empty()), [Press::Char('a')]);
+        assert_eq!(ch("G", ModifiersState::SHIFT), [Press::Char('G')]);
         assert_eq!(
             ch("é€", ModifiersState::empty()),
-            [Input::Char('é'), Input::Char('€')]
+            [Press::Char('é'), Press::Char('€')]
         );
         assert_eq!(
-            inputs(&Key::Named(NamedKey::Space), ModifiersState::empty()),
-            [Input::Char(' ')]
+            presses(&Key::Named(NamedKey::Space), ModifiersState::empty()),
+            [Press::Char(' ')]
         );
     }
 
     #[test]
-    fn insert_mode_control_keys() {
+    fn control_letters_are_lowercased() {
         let ctrl = ModifiersState::CONTROL;
-        assert_eq!(ch("n", ctrl), [Input::Down]);
-        assert_eq!(ch("p", ctrl), [Input::Up]);
-        assert_eq!(ch("w", ctrl), [Input::DeleteWord]);
-        assert_eq!(ch("u", ctrl), [Input::Clear]);
-        assert_eq!(ch("N", ctrl | ModifiersState::SHIFT), [Input::Down]);
-        assert!(ch("k", ctrl).is_empty());
+        assert_eq!(ch("n", ctrl), [Press::Ctrl('n')]);
+        assert_eq!(ch("N", ctrl | ModifiersState::SHIFT), [Press::Ctrl('n')]);
+        assert!(ch("1", ctrl).is_empty());
         assert_eq!(
-            inputs(&Key::Named(NamedKey::Backspace), ctrl),
-            [Input::DeleteWord]
+            presses(&Key::Named(NamedKey::Backspace), ctrl),
+            [Press::CtrlBackspace]
         );
     }
 
     #[test]
     fn altgr_types_rather_than_triggering_shortcuts() {
         let altgr = ModifiersState::CONTROL | ModifiersState::ALT;
-        assert_eq!(ch("@", altgr), [Input::Char('@')]);
+        assert_eq!(ch("@", altgr), [Press::Char('@')]);
         assert!(ch("x", ModifiersState::ALT).is_empty());
         assert!(ch("x", ModifiersState::SUPER).is_empty());
     }
@@ -98,15 +96,16 @@ mod tests {
     #[test]
     fn named_keys() {
         let none = ModifiersState::empty();
-        for (named, input) in [
-            (NamedKey::Escape, Input::Escape),
-            (NamedKey::Enter, Input::Submit),
-            (NamedKey::ArrowUp, Input::Up),
-            (NamedKey::ArrowDown, Input::Down),
-            (NamedKey::Backspace, Input::Backspace),
+        for (named, press) in [
+            (NamedKey::Escape, Press::Escape),
+            (NamedKey::Enter, Press::Enter),
+            (NamedKey::ArrowUp, Press::Up),
+            (NamedKey::ArrowDown, Press::Down),
+            (NamedKey::Backspace, Press::Backspace),
+            (NamedKey::Tab, Press::Tab),
         ] {
-            assert_eq!(inputs(&Key::Named(named), none), [input]);
+            assert_eq!(presses(&Key::Named(named), none), [press]);
         }
-        assert!(inputs(&Key::Named(NamedKey::Tab), none).is_empty());
+        assert!(presses(&Key::Named(NamedKey::F1), none).is_empty());
     }
 }

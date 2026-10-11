@@ -1,8 +1,8 @@
 //! Everything that depends on the operating system: the global hotkey,
-//! the per-user control endpoint, focus hand-off, the console, and facts
-//! about this process and session. Later milestones add the foreground
-//! window, opening and revealing paths, launching programs and terminals,
-//! autostart, app discovery and the window list.
+//! the per-user control endpoint, focus hand-off, opening paths and URLs,
+//! running programs, the clipboard, the console, and facts about this
+//! process and session. Later milestones add the foreground window,
+//! revealing paths (M4), autostart and the window list (M6).
 //!
 //! Where the daemon's logic depends on OS behaviour it reaches it through
 //! a trait ([`hotkey::Hotkey`]) so that logic is tested in CI with fakes,
@@ -21,12 +21,15 @@
 //! OS or the window system directly; a workspace test enforces that on
 //! the dependency lists.
 
+pub mod clipboard;
 pub mod console;
 pub mod display;
 pub mod endpoint;
 pub mod focus;
 pub mod hotkey;
+pub mod launch;
 pub mod process;
 
+pub use clipboard::Clipboard;
 pub use endpoint::{BindError, Endpoint, Listener, Stream};
 pub use hotkey::{Hotkey, HotkeyError, SystemHotkey};

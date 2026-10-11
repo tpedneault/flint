@@ -11,6 +11,9 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+# Text only: the default features pull in an image library Flint has no
+# use for; data-control is Wayland's clipboard protocol.
+arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
 flint-config = { path = "../flint-config" }
 
 [target.'cfg(windows)'.dependencies]
@@ -25,7 +28,9 @@ windows-sys = { workspace = true, features = [
     "Win32_System_Pipes",
     "Win32_System_ProcessStatus",
     "Win32_System_RemoteDesktop",
+    "Win32_System_Registry",
     "Win32_System_Threading",
+    "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
 

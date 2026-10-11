@@ -12,9 +12,10 @@ resident daemon, the budgets, ranking, the platform constraints) is in
 [DESIGN.md](DESIGN.md); the wire protocol is in [PROTOCOL.md](PROTOCOL.md);
 what comes from Fenix is in [FENIX-INTEGRATION.md](FENIX-INTEGRATION.md).
 
-Status: M1. The daemon, the control endpoint, the CLI, the hotkey and the
-window with its query line and a static list work; matching, providers
-and actions don't exist yet. The *Filled in* column says which milestone
+Status: M2. The daemon, the control endpoint, the CLI and the hotkey
+(M1), and searching apps, quicklinks and Flint's commands with Fenix's
+Insert/Normal modes, frecency and the stable merge (M2) work; Fenix,
+external providers and the action menu don't exist yet. The *Filled in* column says which milestone
 gives each crate its first code, or its next.
 
 ## Crates
@@ -22,14 +23,14 @@ gives each crate its first code, or its next.
 | Crate | Role | Filled in |
 |---|---|---|
 | `flint-protocol` | Message types, handshake, error codes and size limits of [PROTOCOL.md](PROTOCOL.md); `Content-Length` framing compatible with `fenix-rpc`, with a bounded reader; the host-side handshake state machine and a blocking client. No threads, no sockets. | M1 (envelope, `hello`, client messages), M5 (provider messages) |
-| `flint-index` | Candidate store, query and scope parsing, matching with `nucleo-matcher`, frecency, the stable merge of streamed results. Pure; carries the 16 ms benchmark gate. | M2 |
+| `flint-index` | Candidate store, scope keywords, matching with `nucleo-matcher` (fuzzy on titles, by substring on keywords and subtitles), frecency, the stable merge of streamed results. Pure; carries the 16 ms benchmark gate (`examples/bench.rs`). | M2 |
 | `flint-config` | `settings.toml`: the schema declared once, reading, per-setting validation; the hotkey `Chord`; Flint's folders and `FLINT_HOME`. | M1 |
-| `flint-platform` | Everything OS-specific: the control endpoint, the hotkey (behind the `Hotkey` trait), focus hand-off, the console, process facts; later open/reveal/terminal, autostart, app discovery, window list. | M1, M2, M6 |
-| `flint-providers` | Built-in providers: apps, quicklinks, Flint's commands, then calculator, shell and windows. | M2, M6 |
+| `flint-platform` | Everything OS-specific: the control endpoint, the hotkey (behind the `Hotkey` trait), focus hand-off, opening and launching (`ShellExecuteExW`, detached spawns), the clipboard, the console, process facts; later reveal (M4), autostart and the window list (M6). | M1, M2, M4, M6 |
+| `flint-providers` | Built-in providers as `Item`s: apps (Start Menu shortcuts; `.desktop` files, parsed per the spec), quicklinks, Flint's commands; then calculator, shell and windows. Discovery is file-system walking, tested on any OS. | M2, M6 |
 | `flint-fenix` | Everything Fenix: locating it, its state files and theme, the control-protocol client with capability detection, the legacy hand-off. | M3, M7 |
 | `flint-host` | The control server for CLI clients (M1); the provider host (spawning and accepting providers, routing, timeouts, crash isolation) in M5. Owns the threads that talk to peers. | M1, M5 |
-| `flint-gui` | winit + wgpu + glyphon: the window, query line, list and footer; GPU with fallback adapter; later chips, highlights, action menu, which-key popup, theming. | M1 |
-| `flint` | The executable: command line, daemon or client role, the daemon's controller, its log and timing log. | M1 |
+| `flint-gui` | winit + wgpu + glyphon: the window, query line with scope chip and mode badge, list with highlights and provider badges, footer; Insert/Normal modes; GPU with fallback adapter; later the action menu, which-key popup and themes. | M1, M2, M4 |
+| `flint` | The executable: command line, daemon or client role, the daemon's controller, the catalog (items, scopes, results), action handling, frecency on disk, its log and timing log. | M1, M2 |
 
 Each crate's `lib.rs` (or `main.rs`) opens with a doc comment that is the
 longer version of its row here, including the tradeoffs it takes. Read
@@ -43,17 +44,26 @@ The edges as they are, each added when a crate first used the other
 ```
 flint ──► every crate below
 
-flint-gui ──────► flint-config                       (+ winit, wgpu, glyphon)
-flint-host ─────► flint-protocol
-flint-platform ─► flint-config                       (+ windows-sys, global-hotkey, libc)
-flint-protocol ─►                                    (+ fenix-rpc, serde_json)
-flint-config ───►                                    (+ toml, dirs)
+flint ──► fenix-storage (frecency's state file)
+flint-gui ───────► flint-config                      (+ winit, wgpu, glyphon)
+flint-host ──────► flint-protocol
+flint-providers ─► flint-protocol, flint-config
+flint-platform ──► flint-config                      (+ windows-sys, global-hotkey, arboard, libc)
+flint-index ─────►                                   (+ nucleo-matcher, serde)
+flint-protocol ──►                                   (+ fenix-rpc, serde_json)
+flint-config ────►                                   (+ toml, dirs)
 ```
 
-Still to come: `flint-gui` → `flint-index` and `fenix-keymap` (M2, M4),
-`flint-fenix` → `flint-protocol`, `flint-platform`, `fenix-storage` (M3),
-`flint-providers` → `flint-protocol`, `flint-platform` (M2), `flint-host`
-→ `flint-platform` for spawning providers (M5).
+Still to come: `flint-gui` → `fenix-keymap` (M4), `flint-fenix` →
+`flint-protocol`, `flint-platform`, `fenix-storage` (M3), `flint-host` →
+`flint-platform` for spawning providers (M5).
+
+`flint-gui` doesn't depend on `flint-index`, though DESIGN.md drew that
+edge: the window reports a changed query and the daemon searches and
+hands back rows, so the window stays a drawing of state and the search
+can be tested without one. `flint-providers` doesn't depend on
+`flint-platform`: listing apps is reading folders, and launching them is
+the daemon's call into the platform.
 
 `flint-platform` depends on `flint-config` for one type, `Chord`: the
 hotkey is parsed and validated with the other settings, and the platform
@@ -96,6 +106,11 @@ lints, and that the licence is MIT OR Apache-2.0.
    │                     accept thread: blocks on the endpoint
 ```
 
+Two more kinds of thread come and go: an apps scan (at start, and on a
+show five minutes after the last one) that sends its items back as an
+event, and the frecency writer, which saves the newest snapshot after a
+pick. Neither is ever waited for.
+
 While hidden, all three wait on the OS (`ControlFlow::Wait`, a blocking
 accept, a blocking read); there are no timers, so the daemon uses no CPU.
 `quit` is answered before the daemon exits: the control thread writes the
@@ -136,9 +151,11 @@ gates, in order:
 | `clippy` | `cargo clippy --locked --workspace --all-targets -- -D warnings` |
 | `tests` | `cargo test --locked --workspace --no-fail-fast` |
 | `build` | `cargo build --locked -p flint` |
+| `bench` | `cargo run --locked --release -p flint-index --example bench -- --gate` |
 
-The index benchmark gate joins them in M2 (DESIGN.md, "Performance
-budget"). Each run writes one log per gate and a `summary.json` to a fresh
+The benchmark searches 100k synthetic candidates the way typing does and
+fails when the 95th percentile is more than 50% over the 16 ms budget
+(DESIGN.md, "Performance budget"). Each run writes one log per gate and a `summary.json` to a fresh
 folder under `target/ci/`, and stops at the first failing gate.
 
 `--locked` means a change to dependencies must include the updated

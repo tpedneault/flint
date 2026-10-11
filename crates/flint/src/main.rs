@@ -16,11 +16,13 @@
 
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
+mod catalog;
 mod cli;
 mod client;
 mod daemon;
 mod log;
 mod report;
+mod store;
 mod timings;
 
 use std::process::ExitCode;
