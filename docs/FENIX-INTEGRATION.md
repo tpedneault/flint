@@ -39,7 +39,7 @@ are relative to the Fenix repository.
 
 ## What Flint reads today (Fenix level 0, milestone M3)
 
-Without any Fenix change, Flint:
+Implemented in M3 (`flint-fenix`). Without any Fenix change, Flint:
 
 - resolves Fenix's folders with `fenix_storage::paths::Roots::current()`
   (so a portable `FENIX_HOME` install works);
@@ -53,15 +53,25 @@ Without any Fenix change, Flint:
   `\\?\C:\...`;
 - treats a missing, empty or unreadable file as "no items", the same
   posture Fenix takes;
-- opens a file in Fenix by spawning `fenix <path>` (the configured
-  executable, or `fenix` on `PATH`), which hands off to the running
-  instance through the existing mechanism or starts Fenix;
+- opens a file in Fenix by spawning `fenix <path>` (`fenix.executable`
+  when set, else `fenix` on `PATH`, else beside `flint`), which hands off
+  to the running instance through the existing mechanism or starts Fenix.
+  On Windows, Flint can't name the running Fenix's pid to grant it the
+  foreground (that needs F3), so it calls
+  `AllowSetForegroundWindow(ASFW_ANY)` just before spawning: any process
+  may take the foreground until the user's next input. Narrower than it
+  sounds (it lasts one hand-off) and replaced by the pid from
+  `fenix/hello` in M7;
 - does **not** offer "open project in Fenix": `fenix <directory>` is not a
   project open today (`App::open_file_as` treats any path as a file).
   Project items offer "open folder", "terminal here" and "copy path", and
   show "open in Fenix needs a newer Fenix" disabled;
 - follows `editor.theme` and `editor.font_family` from Fenix's
-  `settings.toml`, watching the file.
+  `settings.toml`. Instead of a watcher thread, Flint checks the file's
+  modification time before each show and re-reads it when it changed,
+  which is when a difference could be seen; the state files are checked
+  the same way after each show. Only those two keys are read: the file
+  also holds Fenix's tokens, which Flint never reads (F12).
 
 ## Changes Fenix needs
 

@@ -546,6 +546,14 @@ dependencies = [
 [[package]]
 name = "flint-fenix"
 version = "0.1.0"
+dependencies = [
+ "fenix-storage",
+ "flint-platform",
+ "flint-protocol",
+ "serde",
+ "serde_json",
+ "toml",
+]
 
 [[package]]
 name = "flint-gui"

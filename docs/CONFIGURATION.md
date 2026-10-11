@@ -52,9 +52,15 @@ toggle = "Ctrl+Shift+Space"
 width = 800
 rows = 7
 
+[appearance]
+theme = "fenix"            # or "Nord", "Dracula", ...
+
 [behaviour]
 hide_on_blur = true
 escape_hides = false
+
+[fenix]
+executable = 'C:\tools\fenix\fenix.exe'
 
 [[quicklinks]]
 keyword = "j"
@@ -82,9 +88,31 @@ it is out of date.
 | `hotkey.toggle` | a key chord, like `"Ctrl+Shift+Space"` | `"Alt+Space"` | The global hotkey that shows and hides Flint (Windows, and X11 best effort). On Wayland there are no global hotkeys: bind `flint toggle` in the desktop's shortcut settings instead (docs/KDE.md). `Alt+Space` shadows Windows' own window-menu shortcut while Flint runs. |
 | `appearance.width` | a whole number, 400–2000 | `720` | The window's width, in logical pixels (scaled with the display). |
 | `appearance.rows` | a whole number, 1–30 | `9` | How many results are shown at once; the window's height follows. |
+| `appearance.theme` | one of `"fenix"`, `"Orbit Dark"`, `"TempleOS"`, `"Gruvbox Dark"`, `"Nord"`, `"Dracula"`, `"Solarized Dark"`, `"One Dark"`, `"Visual Studio Dark"` | `"fenix"` | The colours. `fenix` follows Fenix's `editor.theme` (and `editor.font_family`), changing when Fenix's does; a theme's name pins it. Orbit Dark when Fenix isn't installed or names a theme Flint doesn't have. |
 | `behaviour.hide_on_blur` | `true` or `false` | `true` | Hide Flint when it loses focus, as when you click another window. |
 | `behaviour.escape_hides` | `true` or `false` | `false` | Make `Esc` hide Flint from either mode, as Raycast does. By default `Esc` in Insert mode goes to Normal mode, where a second `Esc` (or `q`) hides. |
+| `fenix.executable` | text | `""` | The `fenix` program Flint opens files with. Empty: `fenix` on the `PATH`, else beside the `flint` program. |
 | `quicklinks` | entries with `keyword`, `name`, `url` | `[]` | Links with a keyword: typing the keyword and a space scopes the query to the link, and `Enter` opens `url` with `{query}` replaced by what you typed, percent-encoded. A link without `{query}` just opens. Written as `[[quicklinks]]` tables (see the example above). |
+
+### Following Fenix
+
+With `appearance.theme = "fenix"` (the default) Flint draws in the theme
+Fenix uses (`editor.theme` in Fenix's `settings.toml`) and in Fenix's font
+(`editor.font_family`, else the theme's own, as Fenix does). When you
+change either in Fenix, Flint picks it up the next time it is shown. Name
+a theme instead (`"Nord"`) to pin it; `flint status` says which theme is
+in use and why. A font that isn't installed falls back to the system's
+monospace font.
+
+Flint reads only those two keys from Fenix's settings, and never writes
+Fenix's files. Fenix's folders are found the way Fenix finds them,
+`FENIX_HOME` included.
+
+Opening a file in Fenix runs `fenix <file>`, which hands it to the Fenix
+already running. Flint looks for `fenix` on the `PATH`, then beside the
+`flint` program; if Fenix is installed somewhere else (a development
+build, a folder that isn't on the `PATH`), set `fenix.executable`.
+`flint status` says which `fenix` it found.
 
 ### Quicklinks
 
@@ -95,8 +123,9 @@ next fills `{query}` in the URL, percent-encoded (`j ABC-123` opens
 still found by its name, and choosing it puts its keyword in the query
 line for you. A URL without `{query}` simply opens.
 
-- `keyword` must be one word, unique among your links. `a` and `flint`
-  belong to Flint's Apps and Flint commands; a link that names one keeps
+- `keyword` must be one word, unique among your links. `a`, `p`, `f` and
+  `flint` belong to Flint's Apps, Fenix projects, Fenix recent files and
+  Flint commands; a link that names one keeps
   working by name, and `flint status` says why its keyword doesn't.
 - `url` needs a scheme (`https:`, `mailto:`, …).
 - A bad entry is skipped with its reason; the others still work.
@@ -124,7 +153,7 @@ gets it instead. If you rely on that menu, pick another chord.
 
 ## Settings that arrive later
 
-The design names more settings (`appearance.theme` and `[fenix]` in M3,
-`[leader]` in M4, `[[providers]]` in M5). Each joins this page with the
+The design names more settings (`[leader]` in M4, `[[providers]]` in
+M5). Each joins this page with the
 milestone that makes it do something; until then Flint reports it as
 unknown rather than silently accepting a key that does nothing.

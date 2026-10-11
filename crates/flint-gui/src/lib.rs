@@ -34,3 +34,4 @@ pub mod theme;
 pub use app::{Controller, Gui, Proxy, ShowRequest, Shown, Ui};
 pub use gpu::AdapterSummary;
 pub use launcher::{Chip, FooterLine, Mode, Row};
+pub use theme::Palette;

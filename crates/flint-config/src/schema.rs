@@ -3,8 +3,8 @@
 //! in docs/CONFIGURATION.md all read this list, so they can't disagree.
 //!
 //! Only settings that do something are declared. Settings the design
-//! names for later milestones (`appearance.theme` and `[fenix]` in M3,
-//! `[leader]` in M4, `[[providers]]` in M5, ...) join the list with the
+//! names for later milestones (`[leader]` in M4, `[[providers]]` in M5,
+//! ...) join the list with the
 //! behaviour, so `settings.toml` never accepts a key that silently does
 //! nothing.
 //!
@@ -15,7 +15,7 @@
 use toml::Value;
 
 use crate::chord::Chord;
-use crate::{Quicklink, Settings};
+use crate::{Quicklink, Settings, THEMES};
 
 /// What a setting takes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,6 +33,10 @@ pub enum Kind {
     Chord,
     /// An array of tables (`[[quicklinks]]`) with these fields.
     Records(&'static [&'static str]),
+    /// One of these words, in any case; stored as written here.
+    Choice(&'static [&'static str]),
+    /// Any text; empty means "not set".
+    Text,
 }
 
 impl Kind {
@@ -45,6 +49,11 @@ impl Kind {
                 let fields: Vec<String> = fields.iter().map(|f| format!("`{f}`")).collect();
                 format!("entries with {}", fields.join(", "))
             }
+            Kind::Choice(choices) => {
+                let choices: Vec<String> = choices.iter().map(|c| format!("`\"{c}\"`")).collect();
+                format!("one of {}", choices.join(", "))
+            }
+            Kind::Text => "text".into(),
         }
     }
 }
@@ -80,7 +89,12 @@ impl Setting {
     pub fn apply(&self, settings: &mut Settings, value: &Value) -> Result<Vec<String>, String> {
         match (self.kind, value) {
             (Kind::Bool, Value::Boolean(_)) | (Kind::Chord, Value::String(_)) => {}
-            (Kind::Records(_), Value::Array(_)) => {}
+            (Kind::Records(_), Value::Array(_)) | (Kind::Text, Value::String(_)) => {}
+            (Kind::Choice(choices), Value::String(text)) => {
+                if !choices.iter().any(|c| c.eq_ignore_ascii_case(text)) {
+                    return Err(format!("`{text}` isn't {}", self.kind.describe()));
+                }
+            }
             (Kind::Int { min, max }, Value::Integer(n)) => {
                 if !(min..=max).contains(n) {
                     return Err(format!("{n} is out of range ({min}–{max})"));
@@ -96,6 +110,16 @@ impl Setting {
         }
         (self.apply)(settings, value)
     }
+}
+
+/// The choice `value` names, spelled as the setting lists it.
+fn choice(value: &Value, choices: &[&'static str]) -> &'static str {
+    let text = value.as_str().unwrap_or_default();
+    choices
+        .iter()
+        .find(|c| c.eq_ignore_ascii_case(text))
+        .copied()
+        .unwrap_or(choices[0])
 }
 
 fn int(value: &Value) -> u32 {
@@ -147,6 +171,19 @@ pub static SETTINGS: &[Setting] = &[
         },
     },
     Setting {
+        key: "appearance.theme",
+        kind: Kind::Choice(&THEMES),
+        default: "\"fenix\"",
+        help: "The colours. `fenix` follows Fenix's `editor.theme` (and \
+               `editor.font_family`), changing when Fenix's does; a theme's \
+               name pins it. Orbit Dark when Fenix isn't installed or names a \
+               theme Flint doesn't have.",
+        apply: |s, v| {
+            s.theme = choice(v, &THEMES).to_owned();
+            Ok(vec![])
+        },
+    },
+    Setting {
         key: "behaviour.hide_on_blur",
         kind: Kind::Bool,
         default: "true",
@@ -165,6 +202,17 @@ pub static SETTINGS: &[Setting] = &[
                `Esc` (or `q`) hides.",
         apply: |s, v| {
             s.escape_hides = v.as_bool().unwrap_or(false);
+            Ok(vec![])
+        },
+    },
+    Setting {
+        key: "fenix.executable",
+        kind: Kind::Text,
+        default: "\"\"",
+        help: "The `fenix` program Flint opens files with. Empty: `fenix` on \
+               the `PATH`, else beside the `flint` program.",
+        apply: |s, v| {
+            s.fenix_executable = v.as_str().unwrap_or_default().trim().to_owned();
             Ok(vec![])
         },
     },
@@ -323,6 +371,23 @@ mod tests {
         assert!(problems[1].contains("space"));
         assert!(problems[2].contains("scheme"));
         assert_eq!(problems[3], "entry 5: no `name`");
+    }
+
+    #[test]
+    fn choices_are_matched_in_any_case_and_stored_as_listed() {
+        let theme = find("appearance.theme").unwrap();
+        let mut s = Settings::default();
+        theme
+            .apply(&mut s, &Value::String("visual studio DARK".into()))
+            .unwrap();
+        assert_eq!(s.theme, "Visual Studio Dark");
+        let err = theme
+            .apply(&mut s, &Value::String("Solarized Light".into()))
+            .unwrap_err();
+        assert!(
+            err.starts_with("`Solarized Light` isn't one of `\"fenix\"`"),
+            "{err}"
+        );
     }
 
     /// docs/CONFIGURATION.md lists every setting; this keeps it current.

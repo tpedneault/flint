@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 
 use flint_config::Quicklink;
+use flint_fenix::items as fenix;
 use flint_gui::{Chip, Row};
 use flint_index::{Candidate, Frecency, Hit, Index, Search};
 use flint_protocol::Item;
@@ -34,7 +35,7 @@ struct Provider {
     boost: f64,
 }
 
-const PROVIDERS: [Provider; 3] = [
+const PROVIDERS: [Provider; 5] = [
     Provider {
         id: apps::ID,
         title: apps::TITLE,
@@ -51,6 +52,18 @@ const PROVIDERS: [Provider; 3] = [
         id: quicklinks::ID,
         title: quicklinks::TITLE,
         prefix: None,
+        boost: 0.0,
+    },
+    Provider {
+        id: fenix::PROJECTS,
+        title: fenix::PROJECTS_TITLE,
+        prefix: Some(fenix::PROJECTS_PREFIX),
+        boost: 0.0,
+    },
+    Provider {
+        id: fenix::RECENT,
+        title: fenix::RECENT_TITLE,
+        prefix: Some(fenix::RECENT_PREFIX),
         boost: 0.0,
     },
 ];
@@ -118,13 +131,19 @@ impl Catalog {
     /// Replaces a provider's items. Items that break the protocol's limits
     /// are dropped and named in the returned lines.
     pub fn set_items(&mut self, provider_id: &str, items: Vec<Item>) -> Vec<String> {
+        self.set_ranked(provider_id, items.into_iter().map(|i| (i, 0.0)).collect())
+    }
+
+    /// [`Catalog::set_items`], each item with its own boost on top of its
+    /// provider's: a pinned project, a more recent file.
+    pub fn set_ranked(&mut self, provider_id: &str, items: Vec<(Item, f64)>) -> Vec<String> {
         let Some(p) = provider(provider_id) else {
             return vec![format!("no provider `{provider_id}`")];
         };
         self.items.retain(|_, (_, owner)| *owner != p.id);
         let mut problems = Vec::new();
         let mut candidates = Vec::with_capacity(items.len());
-        for item in items {
+        for (item, boost) in items {
             if let Err(why) = item.check() {
                 problems.push(format!("{}: {why}", p.title));
                 continue;
@@ -139,7 +158,7 @@ impl Catalog {
                 provider: p.id.to_owned(),
                 title: item.title.clone(),
                 secondary,
-                boost: p.boost,
+                boost: p.boost + boost,
             });
             self.items.insert(item.id.clone(), (item, p.id));
         }
@@ -438,6 +457,29 @@ mod tests {
         );
         // A new keystroke ranks afresh.
         assert_eq!(c.search(None, "f", 0)[0].title, "F");
+    }
+
+    #[test]
+    fn fenix_projects_and_recent_files_have_scopes_and_keep_their_order() {
+        let mut c = catalog();
+        let home = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../flint-fenix/tests/fixtures/fenix-home");
+        let (state, _) = flint_fenix::state::read(&flint_fenix::Roots::portable(&home));
+        c.set_ranked(fenix::PROJECTS, fenix::projects(&state));
+        c.set_ranked(fenix::RECENT, fenix::recent(&state));
+        assert_eq!(c.split_scope("p x").unwrap().0.label, "Projects");
+        assert_eq!(c.split_scope("f x").unwrap().0.label, "Recent files");
+        // The pinned project first, then Fenix's own order.
+        assert_eq!(
+            titles(&c.search(Some("p"), "", 0)),
+            ["fenix", "flint", "ops", "scratch"]
+        );
+        // The most recent file first among equal matches.
+        assert_eq!(
+            titles(&c.search(Some("f"), "", 0)),
+            ["main.rs", "Cargo.toml", "DESIGN.md"]
+        );
+        assert_eq!(c.search(None, "design", 0)[0].badge, "Recent files");
     }
 
     #[test]

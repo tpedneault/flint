@@ -1,0 +1,18 @@
+{
+  "known": [
+    "C:\\dev\\fenix",
+    "C:\\dev\\flint",
+    "\\\\?\\UNC\\server\\share\\ops",
+    "C:\\dev\\scratch",
+    "\\\\?\\C:\\dev\\fenix"
+  ],
+  "meta": {
+    "pinned": [
+      "\\\\?\\C:\\dev\\fenix"
+    ],
+    "groups": {
+      "\\\\server\\share\\ops": "Mission ops",
+      "C:\\dev\\scratch": "  "
+    }
+  }
+}

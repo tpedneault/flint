@@ -51,3 +51,10 @@ All notable changes to Flint are recorded here. The format follows
 - `[[quicklinks]]` in `settings.toml`: `j ABC-123` opens
   `https://jira.example.com/browse/ABC-123`.
 - A keystroke benchmark over 100k candidates gates CI.
+- Fenix's projects (`p `, pinned first) and recent files (`f `, most
+  recent first) in the results: `Enter` opens a project's folder, and
+  opens a recent file in Fenix through its existing hand-off.
+- Flint follows Fenix's theme and font (all eight of Fenix's themes),
+  picking up a change the next time it is shown; `appearance.theme` pins
+  one instead.
+- `fenix.executable` for a Fenix that isn't on the `PATH`.

@@ -22,3 +22,20 @@ pub fn allow_foreground(pid: u32) {
     #[cfg(not(windows))]
     let _ = pid;
 }
+
+/// Allows any process to take the foreground, until the user's next input.
+///
+/// For hand-offs where the process that will show a window isn't the one
+/// Flint starts: `fenix <file>` passes the file to the Fenix already
+/// running and exits, and it is that Fenix which must come forward. Until
+/// Fenix reports its pid over a control protocol (F1, F3), Flint can't
+/// name it, so it lifts the lock for everyone for that one moment; the
+/// grant ends at the next key press or click.
+pub fn allow_any_foreground() {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY};
+        // SAFETY: plain call with an integer argument.
+        unsafe { AllowSetForegroundWindow(ASFW_ANY) };
+    }
+}

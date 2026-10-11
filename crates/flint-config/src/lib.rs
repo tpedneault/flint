@@ -33,6 +33,22 @@ use std::time::SystemTime;
 pub use chord::{Chord, Key};
 pub use paths::Folders;
 
+/// `appearance.theme`'s choices: `fenix` (follow Fenix), then the eight
+/// themes Fenix has at the pinned revision, by `fenix-gui`'s
+/// `theme::ALL`. `flint-gui` carries their colours, and a test there
+/// checks it has exactly these.
+pub const THEMES: [&str; 9] = [
+    "fenix",
+    "Orbit Dark",
+    "TempleOS",
+    "Gruvbox Dark",
+    "Nord",
+    "Dracula",
+    "Solarized Dark",
+    "One Dark",
+    "Visual Studio Dark",
+];
+
 /// Every setting's value, after checking.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
@@ -46,6 +62,10 @@ pub struct Settings {
     pub hide_on_blur: bool,
     /// `behaviour.escape_hides`.
     pub escape_hides: bool,
+    /// `appearance.theme`: `fenix`, or one of [`THEMES`], as listed there.
+    pub theme: String,
+    /// `fenix.executable`; empty to look for it.
+    pub fenix_executable: String,
     /// `[[quicklinks]]`, in file order, keywords unique.
     pub quicklinks: Vec<Quicklink>,
 }
@@ -69,6 +89,8 @@ impl Default for Settings {
             rows: 9,
             hide_on_blur: true,
             escape_hides: false,
+            theme: "fenix".to_owned(),
+            fenix_executable: String::new(),
             quicklinks: Vec::new(),
         }
     }
