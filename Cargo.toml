@@ -1,0 +1,44 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/flint",
+    "crates/flint-config",
+    "crates/flint-fenix",
+    "crates/flint-gui",
+    "crates/flint-host",
+    "crates/flint-index",
+    "crates/flint-platform",
+    "crates/flint-protocol",
+    "crates/flint-providers",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/tpedneault/flint"
+authors = ["Thomas Pedneault <thomas@pedneault.dev>"]
+# Flint ships as one binary; its crates are building blocks, not libraries
+# on crates.io (the same choice Fenix makes).
+publish = false
+
+# Fenix's crates are not on crates.io, so they come from git, pinned to the
+# revision the design was checked against (docs/DESIGN.md, "Dependencies on
+# Fenix crates"). Cargo resolves an entry here only once a member uses it,
+# so listing them before they are needed costs nothing and keeps the pin in
+# one place. Only these three until M8 adds `fenix-jira`/`fenix-gitlab`;
+# never `fenix-project`, `fenix-gui` or `fenix-picker`.
+[workspace.dependencies]
+fenix-keymap = { git = "https://github.com/tpedneault/fenix", rev = "f05780740b7d45e41eedc35b846dba7c832f4d49" }
+fenix-rpc = { git = "https://github.com/tpedneault/fenix", rev = "f05780740b7d45e41eedc35b846dba7c832f4d49" }
+fenix-storage = { git = "https://github.com/tpedneault/fenix", rev = "f05780740b7d45e41eedc35b846dba7c832f4d49" }
+
+# Every crate must say what it is for at the top, including what it
+# deliberately doesn't do; the lint turns a missing header into a CI failure
+# (clippy runs with `-D warnings`).
+[workspace.lints.rust]
+missing_docs = "warn"
+
+[profile.release]
+lto = true
+codegen-units = 1
