@@ -59,10 +59,34 @@ fn action(id: &str, title: &str, kind: ActionKind) -> Action {
     }
 }
 
+/// A path's last component and the folder before it, for display.
+///
+/// Split on either separator rather than with `Path`, which only knows
+/// the host's: Fenix's state can hold Windows paths read on Linux (a
+/// copied profile, these tests' fixtures), and a title must be the file's
+/// name either way. A Unix file name with a backslash in it is shown
+/// split; that is the cheaper surprise.
+fn split_display(path: &Path) -> (String, Option<String>) {
+    let text = path.display().to_string();
+    let trimmed = text.trim_end_matches(['/', '\\']);
+    match trimmed.rfind(['/', '\\']) {
+        Some(i) if i + 1 < trimmed.len() => {
+            let folder = &trimmed[..i];
+            let folder = if folder.is_empty() || folder.ends_with(':') {
+                // `/x` or `C:\x`: the folder is the root itself.
+                trimmed[..=i].to_owned()
+            } else {
+                folder.to_owned()
+            };
+            (trimmed[i + 1..].to_owned(), Some(folder))
+        }
+        _ if trimmed.is_empty() => (text, None),
+        _ => (trimmed.to_owned(), None),
+    }
+}
+
 fn name_of(path: &Path) -> String {
-    path.file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| path.display().to_string())
+    split_display(path).0
 }
 
 /// A shell opened in the user's terminal, in a folder.
@@ -136,7 +160,7 @@ pub fn recent(state: &FenixState) -> Vec<(Item, f64)> {
             let item = Item {
                 id: format!("{RECENT}:{file}"),
                 title: name_of(path),
-                subtitle: path.parent().map(|p| p.display().to_string()),
+                subtitle: split_display(path).1,
                 icon: Some("file".into()),
                 keywords: vec![],
                 actions: vec![
@@ -218,6 +242,24 @@ mod tests {
             }
         );
         assert_eq!(main.primary_text(), r"C:\dev\fenix\src\main.rs");
+    }
+
+    #[test]
+    fn names_and_folders_split_on_either_separator() {
+        let split = |p: &str| split_display(Path::new(p));
+        let pair = |name: &str, folder: Option<&str>| (name.to_owned(), folder.map(str::to_owned));
+        assert_eq!(
+            split(r"C:\dev\fenix\src\main.rs"),
+            pair("main.rs", Some(r"C:\dev\fenix\src"))
+        );
+        assert_eq!(split("/home/me/a.rs"), pair("a.rs", Some("/home/me")));
+        assert_eq!(
+            split(r"\\server\share\ops"),
+            pair("ops", Some(r"\\server\share"))
+        );
+        assert_eq!(split(r"C:\dev\"), pair("dev", Some(r"C:\")));
+        assert_eq!(split("/etc"), pair("etc", Some("/")));
+        assert_eq!(split("fenix"), pair("fenix", None));
     }
 
     #[test]
