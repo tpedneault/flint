@@ -26,6 +26,7 @@ flint-index = { path = "../flint-index" }
 flint-platform = { path = "../flint-platform" }
 flint-protocol = { path = "../flint-protocol" }
 flint-providers = { path = "../flint-providers" }
+serde_json = { workspace = true }
 
 [dev-dependencies]
-toml = "1"
+toml = { workspace = true }

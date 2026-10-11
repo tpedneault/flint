@@ -2,8 +2,8 @@
 
 Flint is a keyboard-first launcher for Windows and Linux, the front door
 to Fenix (https://github.com/tpedneault/fenix) and the tools built around
-it. The design is settled; the workspace (M0) is in place and the
-milestones from M1 fill it in.
+it. The design is settled; M0 (workspace) and M1 (daemon, endpoint, CLI,
+hotkey, window) are in place, and the milestones from M2 fill in the rest.
 
 ## Read first, in this order
 
@@ -81,6 +81,9 @@ docs/DESIGN.md              the design
 docs/PROTOCOL.md            the wire protocol
 docs/FENIX-INTEGRATION.md   Fenix: what's used, what's needed (F1–F16)
 docs/ARCHITECTURE.md        the crates, the rules tests enforce, the CI gates
+docs/CONFIGURATION.md       settings (table generated from flint-config's schema)
+docs/KEYBINDINGS.md         keys; docs/KDE.md: the Plasma/Wayland setup
+contrib/kde/                the KWin window rule
 crates/                     one folder per crate; each lib.rs header says why
 scripts/ci.ps1              every gate, locally and in CI
 CHANGELOG.md                Keep a Changelog; add under Unreleased

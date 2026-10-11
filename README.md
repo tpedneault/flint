@@ -9,11 +9,12 @@ Fenix's grammar (Vim's Insert/Normal modes and a `SPC` leader with
 which-key) and Fenix's themes, and is built to run on a locked-down
 corporate machine: no admin rights, no installer, no cloud service.
 
-**Status:** M0 — the workspace, its crates and CI are in place; nothing
-runs yet beyond `flint --version`. The daemon and hotkey arrive in M1.
+**Status:** M1. Flint runs in the background, comes up on its hotkey (or
+`flint toggle`), and shows a query line; searching arrives in M2.
 
 - [Design](docs/DESIGN.md): the experience, architecture, milestones
 - [Architecture](docs/ARCHITECTURE.md): the crates, their rules, and how to check a change
+- [Configuration](docs/CONFIGURATION.md), [keybindings](docs/KEYBINDINGS.md), and [KDE Plasma setup](docs/KDE.md)
 - [Provider protocol](docs/PROTOCOL.md): how other tools add items and actions
 - [Flint and Fenix](docs/FENIX-INTEGRATION.md): the integration, and what Fenix needs to add
 

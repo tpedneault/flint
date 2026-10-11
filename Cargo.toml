@@ -33,6 +33,22 @@ fenix-keymap = { git = "https://github.com/tpedneault/fenix", rev = "f05780740b7
 fenix-rpc = { git = "https://github.com/tpedneault/fenix", rev = "f05780740b7d45e41eedc35b846dba7c832f4d49" }
 fenix-storage = { git = "https://github.com/tpedneault/fenix", rev = "f05780740b7d45e41eedc35b846dba7c832f4d49" }
 
+# Third-party crates used by more than one member, or pinned to Fenix's
+# versions on purpose: the rendering stack matches Fenix's exactly so fonts
+# and colours come out the same (DESIGN.md, "Rendering").
+bytemuck = { version = "1.25", features = ["derive"] }
+dirs = "6"
+global-hotkey = "0.8"
+glyphon = "0.12"
+libc = "0.2"
+pollster = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+wgpu = "30.0.1"
+windows-sys = "0.61"
+winit = { version = "0.30.13", default-features = false }
+
 # Every crate must say what it is for at the top, including what it
 # deliberately doesn't do; the lint turns a missing header into a CI failure
 # (clippy runs with `-D warnings`).

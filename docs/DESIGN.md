@@ -9,7 +9,7 @@ This document is the design the first implementation follows. The wire
 protocol is in [PROTOCOL.md](PROTOCOL.md); what Flint needs from Fenix,
 and what Fenix has to add, is in [FENIX-INTEGRATION.md](FENIX-INTEGRATION.md).
 
-Status: design, nothing implemented yet. Pinned against Fenix
+Status: M1 implemented (see [ARCHITECTURE.md](ARCHITECTURE.md)). Pinned against Fenix
 `f05780740b7d45e41eedc35b846dba7c832f4d49` (2026-10-11).
 
 ## Why the name
@@ -207,6 +207,11 @@ and one to do better:
   that fails to start at login is worse than a slower one. Log which
   adapter was chosen in `flint status`. (Fenix would benefit from the same
   fallback; see F15.)
+- Unlike Fenix, request a low-power adapter, and use DX12 on Windows
+  (`WGPU_BACKEND` overrides). Measured in M1 on one machine (GTX 1660 Ti,
+  release build, two runs each): DX12 was ready in 524–649 ms using
+  98–120 MB resident, Vulkan in 951 ms using 139 MB; and WARP, the
+  fallback, is DX12's.
 
 Layout is fixed and simple: query line, result rows (title, subtitle,
 match highlights, provider badge, an icon glyph), footer. Use Nerd Font
@@ -378,6 +383,12 @@ long as the daemon and is rebuilt (not grown) on reload.
   winit's startup-notify support to activate its window with it (without a
   token KWin's focus-stealing prevention may leave the window behind). The
   xdg-desktop-portal GlobalShortcuts portal is a later improvement.
+- **No hidden windows**: winit can neither hide nor focus a window on
+  Wayland (`set_visible` and `focus_window` do nothing there), so the
+  pre-created hidden window is a Windows/X11 strategy. On Wayland the
+  window is created on each show, with the activation token, and dropped
+  on hide; the GPU device, fonts and glyph atlas stay loaded, so only the
+  surface is made again (decided in M1).
 - **Placement**: Wayland clients cannot position their windows. Accept
   KWin's placement, and document a KWin window rule (centre, keep above,
   skip taskbar) shipped as a file in `contrib/kde/`. A layer-shell surface
@@ -391,11 +402,19 @@ long as the daemon and is rebuilt (not grown) on reload.
 ## Security
 
 - **Control endpoint is per-user and private.** Windows: pipe name
-  includes the user's SID, created with a DACL granting access to that SID
-  only, with `FILE_FLAG_FIRST_PIPE_INSTANCE`. Linux:
+  includes the user's SID and the login session id (pipe names are
+  machine-wide, and one user logged in twice on a Remote Desktop host
+  needs two daemons), created with a DACL granting access to that SID
+  only, with `FILE_FLAG_FIRST_PIPE_INSTANCE` and
+  `PIPE_REJECT_REMOTE_CLIENTS`; clients connect with identification-level
+  impersonation only. With `FLINT_HOME` set, the endpoint's name carries a
+  hash of that folder, so a portable or test Flint runs beside the
+  installed one. Linux:
   `$XDG_RUNTIME_DIR/flint/control.sock` in a `0700` directory; if
   `XDG_RUNTIME_DIR` is unset, `/tmp/flint-$UID/` created `0700` and
-  checked to be owned by the user before use.
+  checked to be owned by the user before use. A lock file beside the
+  socket, held for the daemon's life, decides who the daemon is, so a
+  socket left by a crash is replaced safely.
 - **Providers run as the user and only if declared in config.**
 - **No shell interpolation.** `run` actions take an argv array.
 - **Secrets**: provider tokens go in the OS credential store (`keyring`

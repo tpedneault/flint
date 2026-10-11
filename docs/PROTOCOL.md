@@ -18,9 +18,11 @@ Content-Length: 87\r\n
 
 The format is byte-for-byte what `fenix-rpc`'s `read_message`/
 `write_message` handle, so Flint, Fenix's language-server client and
-Fenix's control protocol share one framing. Maximum body size: 4 MiB, and
-header lines are capped at 1 KiB; a larger value is a protocol error and
-the connection is closed **before** any allocation of that size.
+Fenix's control protocol share one framing. Maximum body size: 4 MiB;
+header lines are capped at 1 KiB and a message at 16 header lines. A
+larger value is a protocol error: the host answers with an error whose
+`id` is `null` and closes the connection, **before** any allocation of
+that size.
 
 `fenix-rpc::read_message` allocates whatever `Content-Length` says and
 reads header lines without a bound, which is fine for a language server
@@ -235,8 +237,41 @@ After `hello` with `role: "client"`:
 | `hide` | `{}` | `{}` |
 | `toggle` | `{ "activationToken"?: string }` | `{ "visible": bool }` |
 | `reload` | `{}` | `{ "errors": [string] }` (config problems, if any) |
-| `status` | `{ "timings"?: bool }` | daemon version, uptime, adapter, hotkey state, providers with their state, last timings |
+| `status` | `{ "timings"?: bool }` | a Status, below |
 | `quit` | `{}` | `{}`, then the daemon exits |
+
+Params may be left out when every field is optional. A Status:
+
+```json
+{
+  "version": "0.1.0",
+  "pid": 9932,
+  "uptimeMs": 125000,
+  "coldStartMs": 649,
+  "visible": false,
+  "adapter": { "name": "NVIDIA GeForce GTX 1660 Ti", "backend": "Dx12", "fallback": false },
+  "hotkey": { "chord": "Alt+Space", "state": "registered", "message": null },
+  "providers": [ { "name": "jira", "state": "running", "message": null } ],
+  "memoryBytes": 119600000,
+  "settingsErrors": [ "`appearance.width`: 5000 is out of range (400–2000); using 720" ],
+  "settingsFile": "C:\\Users\\me\\AppData\\Roaming\\flint\\settings.toml",
+  "logFile": "C:\\Users\\me\\AppData\\Local\\flint\\logs\\flint.log",
+  "timings": {
+    "samples": [ { "source": "hotkey", "ms": 15.1, "atUnixMs": 1791731045123 } ],
+    "p50Ms": 15.1,
+    "p95Ms": 15.1
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `coldStartMs` | process start to ready (window, GPU and endpoint up); budget 1.5 s |
+| `adapter` | `null` until the GPU is ready; `fallback` is the software adapter (WARP, llvmpipe) |
+| `hotkey.state` | `registered`; `failed` (the OS refused it, `message` says why); `unsupported` (no global hotkeys here, as on Wayland) |
+| `providers` | always empty before M5 |
+| `memoryBytes` | resident memory where the OS reports it; budget 120 MB |
+| `timings` | only when asked for: the last 100 shows, request to first presented frame, oldest first; budget 50 ms at p95 |
 
 `activationToken` is the `XDG_ACTIVATION_TOKEN` from the client's
 environment on Wayland; see DESIGN.md.

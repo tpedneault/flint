@@ -16,8 +16,22 @@
 //! trusts the header and allocates whatever it says, which is acceptable
 //! for a child process Fenix chose to spawn but not for an endpoint other
 //! processes can reach. Until Fenix gains a bounded reader (F16 in
-//! `docs/FENIX-INTEGRATION.md`), this crate carries its own with the same
-//! semantics plus the 4 MiB body and 1 KiB header-line limits, tested
-//! against `fenix-rpc`'s.
+//! `docs/FENIX-INTEGRATION.md`), this crate carries its own ([`frame`])
+//! with the same semantics plus the 4 MiB body and 1 KiB header-line
+//! limits, tested against `fenix-rpc`'s.
 //!
-//! Empty until M5 (M1 adds the client messages the CLI needs).
+//! M1 implements the envelope, `hello` and the client messages; provider
+//! messages (`provider/register`, `query`, `results`, ...) arrive in M5.
+
+pub mod client;
+pub mod connection;
+pub mod frame;
+pub mod hello;
+pub mod message;
+pub mod session;
+
+pub use client::ClientRequest;
+pub use connection::{CallError, ClientConnection};
+pub use hello::{Hello, HelloResult, HostInfo, Role, PROTOCOL_VERSION};
+pub use message::{code, Id, Message, RpcError};
+pub use session::{Action, HostSession};

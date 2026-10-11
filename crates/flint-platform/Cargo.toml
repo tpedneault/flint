@@ -11,3 +11,24 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+flint-config = { path = "../flint-config" }
+
+[target.'cfg(windows)'.dependencies]
+global-hotkey = { workspace = true }
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Console",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_ProcessStatus",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(unix)'.dependencies]
+global-hotkey = { workspace = true }
+libc = { workspace = true }
