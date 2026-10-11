@@ -1,0 +1,31 @@
+[package]
+name = "flint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "flint"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+# The binary wires every crate together, so building it builds the whole
+# graph. The library crates depend on each other only once they use each
+# other; docs/ARCHITECTURE.md has the intended edges.
+[dependencies]
+flint-config = { path = "../flint-config" }
+flint-fenix = { path = "../flint-fenix" }
+flint-gui = { path = "../flint-gui" }
+flint-host = { path = "../flint-host" }
+flint-index = { path = "../flint-index" }
+flint-platform = { path = "../flint-platform" }
+flint-protocol = { path = "../flint-protocol" }
+flint-providers = { path = "../flint-providers" }
+
+[dev-dependencies]
+toml = "1"

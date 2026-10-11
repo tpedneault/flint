@@ -2,7 +2,8 @@
 
 Flint is a keyboard-first launcher for Windows and Linux, the front door
 to Fenix (https://github.com/tpedneault/fenix) and the tools built around
-it. Nothing is implemented yet; the design is settled.
+it. The design is settled; the workspace (M0) is in place and the
+milestones from M1 fill it in.
 
 ## Read first, in this order
 
@@ -79,5 +80,8 @@ reporting it as done:
 docs/DESIGN.md              the design
 docs/PROTOCOL.md            the wire protocol
 docs/FENIX-INTEGRATION.md   Fenix: what's used, what's needed (F1–F16)
+docs/ARCHITECTURE.md        the crates, the rules tests enforce, the CI gates
+crates/                     one folder per crate; each lib.rs header says why
+scripts/ci.ps1              every gate, locally and in CI
 CHANGELOG.md                Keep a Changelog; add under Unreleased
 ```
