@@ -4,7 +4,7 @@
 //! - `normal`: registers two static items, answers each query with one
 //!   result echoing it, answers `execute` with a message and stays open;
 //!   a query `set` makes it replace its static items.
-//! - `crash`: says `hello`, then exits with code 3.
+//! - `crash`: says `hello`, then complains on stderr and exits with code 3.
 //! - `hang`: registers, then never answers `execute`.
 //! - `garbage`: sends a frame header claiming a huge body.
 //! - `flood`: answers a query with an oversized batch, then a stale one,
@@ -63,6 +63,7 @@ fn main() {
         return;
     }
     if mode == "crash" {
+        eprintln!("crashing on purpose");
         std::process::exit(3);
     }
     send(

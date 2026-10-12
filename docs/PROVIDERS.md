@@ -117,8 +117,8 @@ an answer Flint gives up with "<name> didn't answer".
 
 | What happens | What Flint does |
 |---|---|
-| The program can't be started | The provider is disabled with the reason; `flint status` shows it. |
-| It exits, closes its output, or sends something that isn't the protocol | It is restarted after 1 s, then 5 s, then 30 s. After three such stops within a minute it is disabled, with the last reason, until the settings are saved again or Flint restarts. |
+| The program can't be started | The provider is disabled with the reason, which the footer shows (as does `flint status`). |
+| It exits, closes its output, or sends something that isn't the protocol | It is restarted after 1 s, then 5 s, then 30 s. After three such stops within a minute it is disabled until the settings are saved again or Flint restarts; the footer then says why, ending with the last line it wrote to stderr (Python's "can't open file", say). |
 | It sends a well-framed message Flint can't use (a malformed or oversized batch, results for an old query, a notification from a newer protocol) | The message is dropped, and a malformed one noted in its log; the provider keeps running. |
 | It never answers `execute` | After 10 s the footer says it didn't answer; Flint stays usable meanwhile. |
 | It stops while an `execute` is pending | The footer says it stopped before answering. |

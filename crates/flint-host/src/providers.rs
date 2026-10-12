@@ -561,16 +561,28 @@ impl Shared {
             name: name.to_owned(),
         });
 
+        // The last thing it said on stderr, kept for the reason it stopped:
+        // a program that exits at once (a script that isn't there, a bad
+        // argument) explains itself there, and "exit code: 2" alone would
+        // send the user to the log to find out.
         let stderr_log = log.clone();
+        let (said, last_said) = mpsc::channel::<Option<String>>();
         let _ = std::thread::Builder::new()
             .name(format!("flint-{name}-stderr"))
             .spawn(move || {
+                let mut last = None;
                 for line in BufReader::new(stderr).lines() {
                     match line {
-                        Ok(line) => stderr_log.line(&format!("stderr: {line}")),
+                        Ok(line) => {
+                            stderr_log.line(&format!("stderr: {line}"));
+                            if !line.trim().is_empty() {
+                                last = Some(line.trim().to_owned());
+                            }
+                        }
                         Err(_) => break,
                     }
                 }
+                let _ = said.send(last);
             });
 
         let shared = Arc::clone(self);
@@ -607,6 +619,12 @@ impl Shared {
                     Ok(status) if status.success() => format!("{why} (it exited)"),
                     Ok(status) => format!("{why} ({status})"),
                     Err(_) => why,
+                };
+                // Its stderr ends with it, unless a child of its own holds
+                // the pipe open; don't wait on that.
+                let why = match last_said.recv_timeout(Duration::from_millis(200)) {
+                    Ok(Some(line)) => format!("{why}: {}", shorten(&line)),
+                    _ => why,
                 };
                 shared.ended(&name, generation, why, &log);
             });
@@ -967,6 +985,15 @@ impl ProviderLog {
         if let Some(f) = file.as_mut() {
             let _ = writeln!(f, "{stamp} {text}");
         }
+    }
+}
+
+/// A line short enough for the footer.
+fn shorten(line: &str) -> String {
+    const MAX: usize = 160;
+    match line.char_indices().nth(MAX) {
+        Some((cut, _)) => format!("{}…", &line[..cut]),
+        None => line.to_owned(),
     }
 }
 

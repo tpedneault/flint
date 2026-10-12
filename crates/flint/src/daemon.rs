@@ -685,6 +685,7 @@ impl Daemon {
                 if let Some(ProviderState::Disabled(why)) = &state {
                     self.log.line(&format!("providers: {name} disabled: {why}"));
                 }
+                // The footer's notice names a disabled provider and why.
                 self.refresh(ui);
             }
         }
