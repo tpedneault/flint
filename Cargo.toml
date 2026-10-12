@@ -10,6 +10,7 @@ members = [
     "crates/flint-platform",
     "crates/flint-protocol",
     "crates/flint-providers",
+    "examples/provider-rust",
 ]
 
 [workspace.package]

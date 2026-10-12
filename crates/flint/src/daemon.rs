@@ -18,6 +18,13 @@
 //! [`RESCAN_AFTER`] after the last scan; results that arrive while the
 //! list is on screen go below the selection (the stable merge).
 //!
+//! External providers (M5) run under `flint_host::ProviderHost`: it
+//! spawns or accepts them on its own threads and reports back as
+//! [`Event::Provider`]; the daemon only ever queues work for it, so a
+//! slow or broken provider can't stall the window. Each new query goes to
+//! the dynamic providers in scope, with the window that was in front
+//! before Flint showed itself as context.
+//!
 //! Fenix (level 0, M3): its projects and recent files are read from its
 //! state files on show when they changed, and its theme and font from its
 //! `settings.toml` before every show when `appearance.theme` follows it,
@@ -28,6 +35,7 @@
 //! hotkey and its status, timings; generic over [`Hotkey`] and tested with
 //! a fake) and in [`Catalog`] (searching and what's shown).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::{mpsc, Arc, Mutex};
@@ -37,15 +45,16 @@ use flint_config::{Chord, Folders, Loaded};
 use flint_fenix::{handoff, items as fenix, look, Look, Roots, Stamps};
 use flint_gui::theme::{self, ORBIT_DARK};
 use flint_gui::{Controller, FooterLine, Gui, Proxy, ShowRequest, Shown, Ui};
-use flint_host::ClientHandler;
+use flint_host::{ClientHandler, HostEvent, ProviderHost, State as ProviderState, Timing};
 use flint_platform::{
-    console, launch, process, Clipboard, Hotkey, HotkeyError, Listener, SystemHotkey,
+    console, foreground, launch, process, Clipboard, Hotkey, HotkeyError, Listener, SystemHotkey,
 };
 use flint_protocol::client::{
     Adapter, HotkeyState, HotkeyStatus, ProviderStatus, ReloadResult, ShowParams, Status,
     ToggleResult,
 };
 use flint_protocol::item::{Action, ActionKind};
+use flint_protocol::provider::{Context, Execute, Foreground};
 use flint_protocol::{code, ClientRequest, HostInfo, Item, RpcError};
 use flint_providers::{apps, commands, quicklinks};
 use serde_json::{json, Value};
@@ -78,6 +87,8 @@ pub enum Event {
     },
     /// An apps scan finished.
     Apps(Vec<Item>),
+    /// A provider registered, sent items or results, answered, or changed.
+    Provider(HostEvent),
     /// `flint quit` was answered; stop.
     Exit,
 }
@@ -133,8 +144,27 @@ pub fn run(
     };
     let failure = Arc::new(Mutex::new(None));
     let fenix_roots = Roots::current();
+    let proxy = Arc::new(Mutex::new(gui.proxy()));
+    let events = Arc::clone(&proxy);
+    let providers = ProviderHost::new(
+        host_info(),
+        folders.logs(),
+        folders.settings.clone(),
+        Timing::default(),
+        Arc::new(move |event| {
+            let proxy = events.lock().unwrap_or_else(|e| e.into_inner());
+            proxy.send(Event::Provider(event));
+        }),
+    );
     let daemon = Daemon {
-        proxy: Arc::new(Mutex::new(gui.proxy())),
+        proxy,
+        providers: providers.clone(),
+        connectable: Arc::new(Mutex::new(Vec::new())),
+        prefixes: HashMap::new(),
+        registered: HashMap::new(),
+        last_prefix: HashMap::new(),
+        executing: HashMap::new(),
+        context: Context::default(),
         saver: Saver::start(frecency_path, Arc::clone(&log)),
         log: Arc::clone(&log),
         listener: Some(listener),
@@ -164,6 +194,7 @@ pub fn run(
         failure: Arc::clone(&failure),
     };
     let outcome = gui.run(daemon, loaded.settings);
+    providers.shutdown();
     let failed = failure.lock().unwrap_or_else(|e| e.into_inner()).take();
     match (outcome, failed) {
         (Err(e), _) | (Ok(()), Some(e)) => {
@@ -177,7 +208,30 @@ pub fn run(
     }
 }
 
+fn host_info() -> HostInfo {
+    HostInfo {
+        name: "flint".into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+        pid: std::process::id(),
+    }
+}
+
 struct Daemon {
+    /// The external providers.
+    providers: ProviderHost,
+    /// Providers allowed to connect in, for the control server.
+    connectable: Arc<Mutex<Vec<String>>>,
+    /// `[[providers]] prefix` overrides, by name.
+    prefixes: HashMap<String, Option<String>>,
+    /// Registered providers' titles and own prefixes, by name.
+    registered: HashMap<String, (String, Option<String>)>,
+    /// The prefix each provider last had, kept while it is down so typing
+    /// it can say why nothing answers.
+    last_prefix: HashMap<String, String>,
+    /// `execute` requests in flight: token → what was run, for messages.
+    executing: HashMap<u64, String>,
+    /// Where the current query was made.
+    context: Context,
     proxy: Arc<Mutex<Proxy<Event>>>,
     log: Arc<Log>,
     saver: Saver,
@@ -226,6 +280,7 @@ impl Daemon {
         let mut settings_errors = core.map(|c| c.loaded.errors.clone()).unwrap_or_default();
         settings_errors.extend(self.link_problems.iter().cloned());
         settings_errors.extend(self.leader_problems.iter().cloned());
+        settings_errors.extend(self.catalog.keyword_problems().iter().cloned());
         Status {
             version: env!("CARGO_PKG_VERSION").into(),
             pid: std::process::id(),
@@ -245,7 +300,7 @@ impl Daemon {
                 },
                 |c| c.hotkey_status.clone(),
             ),
-            providers: vec![
+            providers: [
                 built_in(
                     apps::ID,
                     self.catalog.count(apps::ID),
@@ -263,7 +318,22 @@ impl Daemon {
                         Err(why) => why,
                     }),
                 },
-            ],
+            ]
+            .into_iter()
+            .chain(
+                self.providers
+                    .statuses()
+                    .into_iter()
+                    .map(|p| ProviderStatus {
+                        message: Some(match p.state.reason() {
+                            Some(why) => why.to_owned(),
+                            None => format!("{} items", self.catalog.count(&p.name)),
+                        }),
+                        state: p.state.word().into(),
+                        name: p.name,
+                    }),
+            )
+            .collect(),
             theme: self.appearance.as_ref().map(|(t, _)| t.clone()),
             font: self.appearance.as_ref().map(|(_, f)| f.clone()),
             memory_bytes: process::resident_bytes(),
@@ -426,6 +496,7 @@ impl Daemon {
         }
         let mut errors = core.loaded.errors.clone();
         errors.extend(self.link_problems.iter().cloned());
+        self.configure_providers();
         self.build_leader(ui);
         errors.extend(self.leader_problems.iter().cloned());
         self.follow_look(ui, true);
@@ -485,8 +556,163 @@ impl Daemon {
         self.search(ui);
     }
 
+    /// Runs the providers `[[providers]]` names (starting, restarting and
+    /// stopping as needed) and remembers their prefix overrides.
+    fn configure_providers(&mut self) {
+        let configs = self
+            .core
+            .as_ref()
+            .map(|c| c.loaded.settings.providers.clone())
+            .unwrap_or_default();
+        self.prefixes = configs
+            .iter()
+            .map(|c| (c.name.clone(), c.prefix.clone()))
+            .collect();
+        *self.connectable.lock().unwrap_or_else(|e| e.into_inner()) = configs
+            .iter()
+            .filter(|c| c.connect)
+            .map(|c| c.name.clone())
+            .collect();
+        self.providers.configure(
+            configs
+                .into_iter()
+                .map(|c| flint_host::ProviderConfig {
+                    name: c.name,
+                    command: c.command,
+                    connect: c.connect,
+                })
+                .collect(),
+        );
+    }
+
+    /// Notes the window in front, before Flint shows itself.
+    fn capture_context(&mut self) {
+        self.context = Context {
+            foreground: foreground::current().map(|f| Foreground {
+                process: f.process,
+                title: f.title,
+                pid: f.pid,
+            }),
+            fenix: None,
+        };
+    }
+
+    /// Something from the provider host.
+    fn provider_event(&mut self, event: HostEvent, ui: &mut Ui<'_>) {
+        match event {
+            HostEvent::Registered {
+                name,
+                title,
+                prefix,
+                ..
+            } => {
+                let effective = self
+                    .prefixes
+                    .get(&name)
+                    .cloned()
+                    .flatten()
+                    .or(prefix.clone());
+                if let Some(keyword) = &effective {
+                    self.last_prefix.insert(name.clone(), keyword.clone());
+                }
+                for problem in self.catalog.register_external(&name, &title, effective) {
+                    self.log.line(&format!("providers: {problem}"));
+                }
+                self.registered.insert(name, (title, prefix));
+                self.build_leader(ui);
+                self.refresh(ui);
+            }
+            HostEvent::Items { name, items } => {
+                for problem in self.catalog.set_items(&name, items) {
+                    self.log.line(&format!("providers: {problem}"));
+                }
+                self.reshow(ui);
+            }
+            HostEvent::Results {
+                name,
+                query_id,
+                items,
+                ..
+            } => {
+                if self.catalog.add_results(&name, query_id, items) {
+                    self.reshow(ui);
+                }
+            }
+            HostEvent::Executed {
+                token,
+                name,
+                outcome,
+            } => {
+                let Some(what) = self.executing.remove(&token) else {
+                    return;
+                };
+                match outcome {
+                    Ok(result) => {
+                        if let Some(message) = result.message {
+                            ui.set_message(FooterLine::info(message));
+                        } else {
+                            ui.set_message(FooterLine::info(format!("{what}: done")));
+                        }
+                        if result.close {
+                            ui.hide();
+                        }
+                    }
+                    Err(why) => {
+                        self.log.line(&format!("{name}: {what}: {why}"));
+                        ui.set_message(FooterLine::error(why));
+                    }
+                }
+            }
+            HostEvent::Changed { name } => {
+                let state = self
+                    .providers
+                    .statuses()
+                    .into_iter()
+                    .find(|s| s.name == name)
+                    .map(|s| s.state);
+                // Gone, given up on or disconnected: its items go too, since
+                // nothing would answer their actions. A restarting one keeps
+                // them; it re-registers in a moment.
+                let down = matches!(
+                    state,
+                    None | Some(ProviderState::Disabled(_) | ProviderState::Waiting)
+                );
+                if down && self.registered.remove(&name).is_some() {
+                    self.catalog.unregister_external(&name);
+                    self.build_leader(ui);
+                    self.reshow(ui);
+                }
+                if let Some(ProviderState::Disabled(why)) = &state {
+                    self.log.line(&format!("providers: {name} disabled: {why}"));
+                }
+                self.refresh(ui);
+            }
+        }
+    }
+
+    /// Shows the current query's results again, without asking the
+    /// providers anew (new items or results arrived): rows down to the
+    /// selection stay put if they have been seen.
+    fn reshow(&mut self, ui: &mut Ui<'_>) {
+        if !ui.visible() {
+            return;
+        }
+        let scope = ui.scope().map(|c| c.keyword.clone());
+        let text = ui.query().to_owned();
+        if ui.rows_presented() {
+            let rows = self
+                .catalog
+                .merge(scope.as_deref(), &text, ui.selected(), now());
+            ui.merge_rows(rows);
+        } else {
+            let rows = self.catalog.search(scope.as_deref(), &text, now());
+            ui.set_rows(rows);
+        }
+    }
+
     /// Searches for the query line as it is, turning a leading scope
-    /// keyword into the chip first.
+    /// keyword into the chip first, and asks the dynamic providers in
+    /// scope.
     fn search(&mut self, ui: &mut Ui<'_>) {
         let mut text = ui.query().to_owned();
         let mut scope = ui.scope().map(|c| c.keyword.clone());
@@ -499,8 +725,35 @@ impl Daemon {
                 text = rest;
             }
         }
+        let provider = scope.as_deref().and_then(|k| self.catalog.provider_for(k));
+        let query_id = match &provider {
+            // A quicklink's scope asks no provider.
+            None if scope.is_some() => self.providers.query(&text, Some(""), &self.context),
+            _ => self
+                .providers
+                .query(&text, provider.as_deref(), &self.context),
+        };
+        self.catalog.begin_query(query_id);
         let rows = self.catalog.search(scope.as_deref(), &text, now());
         ui.set_rows(rows);
+        // A provider's prefix typed while it is down: say why nothing
+        // answers (a down provider's prefix isn't a scope keyword).
+        if ui.scope().is_none() {
+            let down = self.providers.statuses().into_iter().find_map(|status| {
+                let why = status.state.reason()?.to_owned();
+                let prefix = self
+                    .prefixes
+                    .get(&status.name)
+                    .cloned()
+                    .flatten()
+                    .or_else(|| self.last_prefix.get(&status.name).cloned())?;
+                text.starts_with(&format!("{prefix} "))
+                    .then_some((status.name, why))
+            });
+            if let Some((name, why)) = down {
+                ui.set_message(FooterLine::error(format!("{name}: {why}")));
+            }
+        }
     }
 
     /// New apps arrived: re-rank, keeping on-screen rows in place.
@@ -516,19 +769,12 @@ impl Daemon {
             // Draw what the next show will start with, while nobody is
             // waiting: the first show after start otherwise rasterises
             // every row's glyphs and misses the 50 ms budget.
-            self.search(ui);
+            let rows = self.catalog.search(None, "", now());
+            ui.set_rows(rows);
             ui.prepare();
             return;
         }
-        if ui.rows_presented() {
-            let scope = ui.scope().map(|c| c.keyword.clone());
-            let rows = self
-                .catalog
-                .merge(scope.as_deref(), ui.query(), ui.selected(), now());
-            ui.merge_rows(rows);
-        } else {
-            self.search(ui);
-        }
+        self.reshow(ui);
     }
 
     /// Runs `action` of the item on row `row`.
@@ -536,7 +782,8 @@ impl Daemon {
         let Some(shown) = self.catalog.shown(row).cloned() else {
             return;
         };
-        if let Some(why) = crate::catalog::unavailable(shown.provider, action) {
+        let external = self.catalog.is_external(&shown.provider);
+        if let Some(why) = crate::catalog::unavailable(&shown.provider, external, action) {
             ui.set_message(FooterLine::error(why));
             return;
         }
@@ -556,10 +803,22 @@ impl Daemon {
             ActionKind::Provider if shown.provider == commands::ID => {
                 self.flint_command(&action.id, ui)
             }
-            ActionKind::Provider => Err(format!(
-                "`{}` needs its provider, which arrives in M5",
-                action.title
-            )),
+            ActionKind::Provider => {
+                let request = Execute {
+                    item_id: shown.item.id.clone(),
+                    action_id: action.id.clone(),
+                    query: self.catalog.shown_for().to_owned(),
+                };
+                self.providers
+                    .execute(&shown.provider, request)
+                    .map(|token| {
+                        // Flint stays open until the provider answers (or
+                        // doesn't, within 10 s).
+                        self.executing.insert(token, action.title.clone());
+                        ui.set_message(FooterLine::info(format!("{}…", action.title)));
+                        After::Stay
+                    })
+            }
             ActionKind::Reveal { target } => launch::reveal(target).map(|()| After::Hide),
             ActionKind::Fenix { method, params } => {
                 handoff::execute(method, params, &self.fenix_executable()).map(|()| After::Hide)
@@ -614,6 +873,9 @@ impl Daemon {
     ) -> Result<Value, RpcError> {
         Ok(match request {
             ClientRequest::Show(params) => {
+                if !ui.visible() {
+                    self.capture_context();
+                }
                 self.reload_if_changed(ui);
                 ui.show(Self::show_request(params, "show", at));
                 self.shown_now(ui);
@@ -625,6 +887,7 @@ impl Daemon {
             }
             ClientRequest::Toggle(params) => {
                 if !ui.visible() {
+                    self.capture_context();
                     self.reload_if_changed(ui);
                 }
                 let show = ShowParams {
@@ -651,12 +914,10 @@ impl Daemon {
         let bridge: Arc<dyn ClientHandler> = Arc::new(Bridge {
             proxy: Arc::clone(&self.proxy),
             log: Arc::clone(&self.log),
+            providers: self.providers.clone(),
+            connectable: Arc::clone(&self.connectable),
         });
-        let host = HostInfo {
-            name: "flint".into(),
-            version: env!("CARGO_PKG_VERSION").into(),
-            pid: std::process::id(),
-        };
+        let host = host_info();
         let spawned = std::thread::Builder::new()
             .name("flint-control-accept".into())
             .spawn(move || {
@@ -666,7 +927,6 @@ impl Daemon {
                         Ok((stream.try_clone()?, stream))
                     },
                     host,
-                    vec![],
                     bridge,
                 )
             });
@@ -727,6 +987,7 @@ impl Controller for Daemon {
             self.log.line(&format!("settings: {problem}"));
         }
         self.core = Some(core);
+        self.configure_providers();
         self.build_leader(ui);
         if let Some(adapter) = ui.adapter() {
             self.log.line(&format!(
@@ -752,6 +1013,7 @@ impl Controller for Daemon {
         self.log.line(&format!("ready in {} ms", cold.as_millis()));
         self.refresh(ui);
         if let Some(params) = self.start.show.take() {
+            self.capture_context();
             ui.show(Self::show_request(params, "start", Instant::now()));
             self.search(ui);
         }
@@ -761,6 +1023,7 @@ impl Controller for Daemon {
         match event {
             Event::Hotkey(at) => {
                 if !ui.visible() {
+                    self.capture_context();
                     self.reload_if_changed(ui);
                 }
                 if ui.toggle(Self::show_request(ShowParams::default(), "hotkey", at)) {
@@ -773,6 +1036,7 @@ impl Controller for Daemon {
                 let _ = reply.send(answer);
             }
             Event::Apps(items) => self.apps_arrived(items, ui),
+            Event::Provider(event) => self.provider_event(event, ui),
             Event::Exit => {
                 self.log.line("quitting at a client's request");
                 ui.exit();
@@ -863,6 +1127,8 @@ impl Controller for Daemon {
 struct Bridge {
     proxy: Arc<Mutex<Proxy<Event>>>,
     log: Arc<Log>,
+    providers: ProviderHost,
+    connectable: Arc<Mutex<Vec<String>>>,
 }
 
 impl ClientHandler for Bridge {
@@ -902,6 +1168,22 @@ impl ClientHandler for Bridge {
 
     fn log(&self, line: &str) {
         self.log.line(line);
+    }
+
+    fn declared(&self) -> Vec<String> {
+        self.connectable
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    fn provider(
+        &self,
+        session: flint_protocol::HostSession,
+        reader: Box<dyn std::io::BufRead + Send>,
+        writer: Box<dyn std::io::Write + Send>,
+    ) {
+        self.providers.connected(session, reader, writer);
     }
 }
 

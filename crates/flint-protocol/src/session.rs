@@ -12,6 +12,7 @@ use serde_json::json;
 use crate::client::ClientRequest;
 use crate::hello::{Hello, HelloResult, HostInfo, Role, PROTOCOL_VERSION};
 use crate::message::{code, params, Id, Message, RpcError};
+use crate::provider::ProviderMessage;
 
 /// What the transport should do with one incoming message.
 #[derive(Debug, Clone, PartialEq)]
@@ -27,6 +28,18 @@ pub enum Action {
         /// What was asked.
         request: ClientRequest,
     },
+    /// A provider said something; for `Register`, answer its id.
+    Provider(ProviderMessage),
+    /// A provider answered one of the host's requests (`execute`).
+    Response {
+        /// The request's id.
+        id: Option<Id>,
+        /// Its result or error.
+        outcome: Result<serde_json::Value, RpcError>,
+    },
+    /// A provider sent something unusable that can't be answered (a bad
+    /// notification); worth a line in its log.
+    Problem(String),
     /// Nothing to do (a notification, a stray response).
     Nothing,
 }
@@ -61,11 +74,22 @@ impl HostSession {
             Ok(message) => message,
             Err(error) => return Action::Reply(Message::error(None, error)),
         };
+        let is_provider = self.peer.as_ref().is_some_and(|p| p.role == Role::Provider);
         let (id, method, raw) = match message {
             Message::Request { id, method, params } => (id, method, params),
-            // Nothing the host waits for yet, and notifications from a
-            // client have no meaning; both are ignored as the protocol's
-            // versioning rule asks.
+            Message::Notification { method, params } if is_provider => {
+                return match ProviderMessage::notification(&method, params) {
+                    Ok(Some(message)) => Action::Provider(message),
+                    Ok(None) => Action::Nothing,
+                    Err(why) => Action::Problem(why),
+                };
+            }
+            Message::Response { id, outcome } if is_provider => {
+                return Action::Response { id, outcome }
+            }
+            // A client's notifications have no meaning, and nothing is
+            // asked of a client; both are ignored as the protocol's
+            // versioning rule asks. So is anything before `hello`.
             Message::Notification { .. } | Message::Response { .. } => return Action::Nothing,
         };
         let Some(peer) = &self.peer else {
@@ -82,11 +106,22 @@ impl HostSession {
                 Ok(request) => Action::Client { id, request },
                 Err(error) => Action::Reply(Message::error(Some(id), error)),
             },
-            // Provider messages arrive in M5.
-            Role::Provider => Action::Reply(Message::error(
-                Some(id),
-                RpcError::new(code::METHOD_NOT_FOUND, format!("unknown method `{method}`")),
-            )),
+            Role::Provider => match ProviderMessage::request(id.clone(), &method, raw) {
+                Ok(ProviderMessage::Register { register, .. }) if register.id != peer.name => {
+                    Action::Reply(Message::error(
+                        Some(id),
+                        RpcError::new(
+                            code::INVALID_PARAMS,
+                            format!(
+                                "`provider/register` id `{}` must be the `hello` name `{}`",
+                                register.id, peer.name
+                            ),
+                        ),
+                    ))
+                }
+                Ok(message) => Action::Provider(message),
+                Err(error) => Action::Reply(Message::error(Some(id), error)),
+            },
         }
     }
 
@@ -265,6 +300,48 @@ mod tests {
         };
         assert_eq!(id, None);
         assert_eq!(e.code, code::PARSE_ERROR);
+    }
+
+    #[test]
+    fn a_provider_registers_reports_and_answers() {
+        let mut s = session(&["jira"]);
+        s.handle(&hello("provider", "jira", 1));
+        let register = request(
+            2,
+            "provider/register",
+            json!({"id": "jira", "title": "Jira"}),
+        );
+        assert!(matches!(
+            s.handle(&register),
+            Action::Provider(ProviderMessage::Register { .. })
+        ));
+        let wrong = request(3, "provider/register", json!({"id": "other", "title": "X"}));
+        assert_eq!(error_code(&s.handle(&wrong)), code::INVALID_PARAMS);
+        let results = Message::Notification {
+            method: "results".into(),
+            params: json!({"queryId": 1, "items": []}),
+        };
+        assert!(matches!(
+            s.handle(&results.to_bytes()),
+            Action::Provider(ProviderMessage::Results(_))
+        ));
+        let bad = Message::Notification {
+            method: "log".into(),
+            params: json!({"level": 3}),
+        };
+        assert!(matches!(s.handle(&bad.to_bytes()), Action::Problem(_)));
+        let answer = Message::result(Id::Number(1), json!({"close": false}));
+        assert!(matches!(
+            s.handle(&answer.to_bytes()),
+            Action::Response {
+                id: Some(Id::Number(1)),
+                outcome: Ok(_)
+            }
+        ));
+        assert_eq!(
+            error_code(&s.handle(&request(4, "toggle", Value::Null))),
+            code::METHOD_NOT_FOUND
+        );
     }
 
     #[test]

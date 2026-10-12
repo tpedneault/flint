@@ -9,7 +9,7 @@ This document is the design the first implementation follows. The wire
 protocol is in [PROTOCOL.md](PROTOCOL.md); what Flint needs from Fenix,
 and what Fenix has to add, is in [FENIX-INTEGRATION.md](FENIX-INTEGRATION.md).
 
-Status: M4 implemented (see [ARCHITECTURE.md](ARCHITECTURE.md)). Pinned against Fenix
+Status: M5 implemented (see [ARCHITECTURE.md](ARCHITECTURE.md)). Pinned against Fenix
 `f05780740b7d45e41eedc35b846dba7c832f4d49` (2026-10-11).
 
 ## Why the name

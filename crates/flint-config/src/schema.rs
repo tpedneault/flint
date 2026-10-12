@@ -3,8 +3,7 @@
 //! in docs/CONFIGURATION.md all read this list, so they can't disagree.
 //!
 //! Only settings that do something are declared. Settings the design
-//! names for later milestones (`[[providers]]` in M5, ...) join the list
-//! with the
+//! names for later milestones join the list with the
 //! behaviour, so `settings.toml` never accepts a key that silently does
 //! nothing.
 //!
@@ -15,7 +14,7 @@
 use toml::Value;
 
 use crate::chord::Chord;
-use crate::{Quicklink, Settings, THEMES};
+use crate::{ProviderConfig, Quicklink, Settings, THEMES};
 
 /// What a setting takes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -237,6 +236,21 @@ pub static SETTINGS: &[Setting] = &[
         },
     },
     Setting {
+        key: "providers",
+        kind: Kind::Records(&["name", "command", "connect", "prefix"]),
+        default: "[]",
+        help: "External providers (docs/PROVIDERS.md). `command` is the program and its \
+               arguments, as a list, started by Flint in the settings folder and talked \
+               to over its stdin and stdout; `connect = true` instead waits for a running \
+               program to connect to Flint itself. `prefix` overrides the provider's own \
+               scope keyword. Only providers named here ever run.",
+        apply: |s, v| {
+            let (providers, problems) = providers(v);
+            s.providers = providers;
+            Ok(problems)
+        },
+    },
+    Setting {
         key: "quicklinks",
         kind: Kind::Records(&["keyword", "name", "url"]),
         default: "[]",
@@ -289,6 +303,85 @@ fn quicklinks(value: &Value) -> (Vec<Quicklink>, Vec<String>) {
         }
     }
     (links, problems)
+}
+
+/// Reads `[[providers]]`, keeping the good entries and explaining the
+/// others.
+fn providers(value: &Value) -> (Vec<ProviderConfig>, Vec<String>) {
+    let mut providers: Vec<ProviderConfig> = Vec::new();
+    let mut problems = Vec::new();
+    for (n, entry) in value.as_array().into_iter().flatten().enumerate() {
+        let checked = (|| -> Result<ProviderConfig, String> {
+            let name = entry
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .ok_or("no `name`")?;
+            if !name.chars().all(|c| {
+                c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-')
+            }) {
+                return Err(format!(
+                    "name `{name}` may use only a-z, 0-9, `.`, `_` and `-`"
+                ));
+            }
+            if providers.iter().any(|p| p.name == name) {
+                return Err(format!("name `{name}` is used by an earlier entry"));
+            }
+            let command: Option<Vec<String>> =
+                match entry.get("command") {
+                    None => None,
+                    Some(Value::Array(parts)) => Some(
+                        parts
+                            .iter()
+                            .map(|p| p.as_str().map(str::to_owned))
+                            .collect::<Option<Vec<_>>>()
+                            .filter(|c| c.first().is_some_and(|p| !p.trim().is_empty()))
+                            .ok_or("`command` must be a list of strings, the program first")?,
+                    ),
+                    Some(_) => return Err(
+                        "`command` must be a list like [\"python\", \"jira.py\"], never one string"
+                            .into(),
+                    ),
+                };
+            let connect = entry
+                .get("connect")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            match (&command, connect) {
+                (Some(_), true) => {
+                    return Err("has both `command` and `connect = true`; pick one".into())
+                }
+                (None, false) => {
+                    return Err(
+                        "needs `command` (Flint starts it) or `connect = true` (it connects)"
+                            .into(),
+                    )
+                }
+                _ => {}
+            }
+            let prefix = match entry.get("prefix") {
+                None => None,
+                Some(Value::String(p))
+                    if !p.trim().is_empty() && !p.trim().contains(char::is_whitespace) =>
+                {
+                    Some(p.trim().to_owned())
+                }
+                Some(_) => return Err("`prefix` must be one word".into()),
+            };
+            Ok(ProviderConfig {
+                name: name.to_owned(),
+                command: command.unwrap_or_default(),
+                connect,
+                prefix,
+            })
+        })();
+        match checked {
+            Ok(provider) => providers.push(provider),
+            Err(why) => problems.push(format!("entry {}: {why}", n + 1)),
+        }
+    }
+    (providers, problems)
 }
 
 /// `scheme:` per RFC 3986: a letter, then letters, digits, `+`, `-`, `.`.
@@ -411,6 +504,43 @@ mod tests {
             err.starts_with("`Solarized Light` isn't one of `\"fenix\"`"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn providers_need_a_way_to_run_and_a_clean_name() {
+        let doc: toml::Table = r#"
+            [[providers]]
+            name = "jira"
+            command = ["flint-jira", "--verbose"]
+            prefix = "j"
+            [[providers]]
+            name = "fenix-live"
+            connect = true
+            [[providers]]
+            name = "Bad Name"
+            command = ["x"]
+            [[providers]]
+            name = "shell"
+            command = "python jira.py"
+            [[providers]]
+            name = "both"
+            command = ["x"]
+            connect = true
+            [[providers]]
+            name = "neither"
+            [[providers]]
+            name = "jira"
+            command = ["again"]
+        "#
+        .parse()
+        .unwrap();
+        let (providers, problems) = providers(&doc["providers"]);
+        let names: Vec<&str> = providers.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["jira", "fenix-live"]);
+        assert_eq!(providers[0].command, ["flint-jira", "--verbose"]);
+        assert!(providers[1].connect && providers[1].command.is_empty());
+        assert_eq!(problems.len(), 5, "{problems:?}");
+        assert!(problems[1].contains("never one string"), "no shell strings");
     }
 
     /// docs/CONFIGURATION.md lists every setting; this keeps it current.

@@ -20,10 +20,9 @@
 //! with the same semantics plus the 4 MiB body and 1 KiB header-line
 //! limits, tested against `fenix-rpc`'s.
 //!
-//! Implemented so far: the envelope, `hello`, the client messages (M1),
-//! and items and actions (M2, which the built-in providers produce);
-//! provider messages (`provider/register`, `query`, `results`, ...)
-//! arrive in M5.
+//! The envelope, `hello` and the client messages arrived in M1, items and
+//! actions in M2 (the built-in providers produce them), and the provider
+//! messages (`provider/register`, `query`, `results`, ...) in M5.
 
 pub mod client;
 pub mod connection;
@@ -31,6 +30,7 @@ pub mod frame;
 pub mod hello;
 pub mod item;
 pub mod message;
+pub mod provider;
 pub mod session;
 
 pub use client::ClientRequest;

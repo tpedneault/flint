@@ -11,5 +11,6 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+fenix-rpc = { workspace = true }
 flint-protocol = { path = "../flint-protocol" }
 serde_json = { workspace = true }

@@ -100,6 +100,7 @@ it is out of date.
 | `behaviour.escape_hides` | `true` or `false` | `false` | Make `Esc` hide Flint from either mode, as Raycast does. By default `Esc` in Insert mode goes to Normal mode, where a second `Esc` (or `q`) hides. |
 | `fenix.executable` | text | `""` | The `fenix` program Flint opens files with. Empty: `fenix` on the `PATH`, else beside the `flint` program. |
 | `leader` | a table of key sequences and actions | `see below` | What `SPC` sequences do in Normal mode: `"f r" = "scope:fenix.recent"`. An action is `scope:<provider>`, `flint:<command>`, `fenix:<command>` or `query:<text>`; a table `{ action = ..., label = ... }` adds a label, and `{ label = ... }` names a group. Without the table, the defaults below apply; with it, the table is the whole map. |
+| `providers` | entries with `name`, `command`, `connect`, `prefix` | `[]` | External providers (docs/PROVIDERS.md). `command` is the program and its arguments, as a list, started by Flint in the settings folder and talked to over its stdin and stdout; `connect = true` instead waits for a running program to connect to Flint itself. `prefix` overrides the provider's own scope keyword. Only providers named here ever run. |
 | `quicklinks` | entries with `keyword`, `name`, `url` | `[]` | Links with a keyword: typing the keyword and a space scopes the query to the link, and `Enter` opens `url` with `{query}` replaced by what you typed, percent-encoded. A link without `{query}` just opens. Written as `[[quicklinks]]` tables (see the example above). |
 
 ### Following Fenix
@@ -138,6 +139,34 @@ line for you. A URL without `{query}` simply opens.
   working by name, and `flint status` says why its keyword doesn't.
 - `url` needs a scheme (`https:`, `mailto:`, …).
 - A bad entry is skipped with its reason; the others still work.
+
+### Providers
+
+Each `[[providers]]` table runs an external provider: a program that
+adds results to Flint over the protocol in docs/PROTOCOL.md. Only the
+providers named here ever run; docs/PROVIDERS.md says how to write one.
+
+```toml
+[[providers]]
+name = "bookmarks"
+command = ["python", "examples/provider-python/bookmarks.py"]
+
+[[providers]]
+name = "jira"
+connect = true        # a program already running connects to Flint
+prefix = "ji"         # instead of the provider's own scope keyword
+```
+
+- `name` is lowercase letters, digits, `.`, `_` and `-`, unique, and must
+  equal the name the provider gives in its `hello`.
+- `command` is a list, the program then its arguments, never one string:
+  Flint doesn't run a shell. It starts in the settings folder, so a
+  relative path is relative to `settings.toml`.
+- Give `command` or `connect = true`, not both.
+- A bad entry is skipped with its reason; the others still run.
+- `flint status` lists each provider and its state (`running`,
+  `restarting`, `disabled` and why); what it writes to stderr goes to
+  `logs/providers/<name>.log` beside `flint.log`.
 
 ### The leader
 
@@ -193,9 +222,3 @@ shortcut bound to it in your desktop or keyboard tool is always a way in.
 **About `Alt+Space` on Windows.** It is also Windows' shortcut for a
 window's system menu (Restore, Move, Size, Close). While Flint runs, Flint
 gets it instead. If you rely on that menu, pick another chord.
-
-## Settings that arrive later
-
-The design names more settings (`[[providers]]` in M5). Each joins this page with the
-milestone that makes it do something; until then Flint reports it as
-unknown rather than silently accepting a key that does nothing.
