@@ -47,7 +47,8 @@ use flint_gui::theme::{self, ORBIT_DARK};
 use flint_gui::{Controller, FooterLine, Gui, Proxy, ShowRequest, Shown, Ui};
 use flint_host::{ClientHandler, HostEvent, ProviderHost, State as ProviderState, Timing};
 use flint_platform::{
-    console, foreground, launch, process, Clipboard, Hotkey, HotkeyError, Listener, SystemHotkey,
+    console, foreground, launch, process, window_list, Clipboard, Hotkey, HotkeyError, Listener,
+    SystemHotkey,
 };
 use flint_protocol::client::{
     Adapter, HotkeyState, HotkeyStatus, ProviderStatus, ReloadResult, ShowParams, Status,
@@ -56,7 +57,7 @@ use flint_protocol::client::{
 use flint_protocol::item::{Action, ActionKind};
 use flint_protocol::provider::{Context, Execute, Foreground};
 use flint_protocol::{code, ClientRequest, HostInfo, Item, RpcError};
-use flint_providers::{apps, commands, quicklinks};
+use flint_providers::{apps, commands, quicklinks, shell, windows};
 use serde_json::{json, Value};
 
 use crate::catalog::Catalog;
@@ -89,6 +90,13 @@ pub enum Event {
     Apps(Vec<Item>),
     /// A provider registered, sent items or results, answered, or changed.
     Provider(HostEvent),
+    /// A command run hidden from the shell prefix finished.
+    Ran {
+        /// The command, as typed.
+        command: String,
+        /// How it ended.
+        exit: launch::Exit,
+    },
     /// `flint quit` was answered; stop.
     Exit,
 }
@@ -103,6 +111,12 @@ enum After {
     Search,
     /// Stop Flint.
     Exit,
+}
+
+/// The user's home folder, where shell commands run.
+fn home_dir() -> Option<String> {
+    let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    std::env::var(var).ok().filter(|h| !h.is_empty())
 }
 
 fn now() -> u64 {
@@ -165,6 +179,8 @@ pub fn run(
         last_prefix: HashMap::new(),
         executing: HashMap::new(),
         context: Context::default(),
+        window_handles: HashMap::new(),
+        windows_unavailable: None,
         saver: Saver::start(frecency_path, Arc::clone(&log)),
         log: Arc::clone(&log),
         listener: Some(listener),
@@ -232,6 +248,10 @@ struct Daemon {
     executing: HashMap<u64, String>,
     /// Where the current query was made.
     context: Context,
+    /// The open windows' handles, by item id, as listed at the last show.
+    window_handles: HashMap<String, u64>,
+    /// Why windows can't be listed here, if they can't.
+    windows_unavailable: Option<String>,
     proxy: Arc<Mutex<Proxy<Event>>>,
     log: Arc<Log>,
     saver: Saver,
@@ -497,6 +517,7 @@ impl Daemon {
         let mut errors = core.loaded.errors.clone();
         errors.extend(self.link_problems.iter().cloned());
         self.configure_providers();
+        self.configure_shell();
         self.build_leader(ui);
         errors.extend(self.leader_problems.iter().cloned());
         self.follow_look(ui, true);
@@ -587,6 +608,7 @@ impl Daemon {
 
     /// Notes the window in front, before Flint shows itself.
     fn capture_context(&mut self) {
+        self.list_windows();
         self.context = Context {
             foreground: foreground::current().map(|f| Foreground {
                 process: f.process,
@@ -595,6 +617,125 @@ impl Daemon {
             }),
             fenix: None,
         };
+    }
+
+    /// The shell the shell prefix runs, from `shell.program`.
+    fn configure_shell(&mut self) {
+        let configured = self
+            .core
+            .as_ref()
+            .map(|c| c.loaded.settings.shell_program.clone())
+            .unwrap_or_default();
+        let shell = shell::resolve(
+            &configured,
+            launch::on_path,
+            std::env::var("SHELL").ok().as_deref(),
+        );
+        self.catalog.set_shell(&shell);
+    }
+
+    /// Lists the open windows for the windows provider. Called just before
+    /// a show, so Flint's window isn't among them and the one in front is
+    /// the one the user was in.
+    fn list_windows(&mut self) {
+        match window_list::list() {
+            Ok(list) => {
+                let list: Vec<windows::Window> = list
+                    .into_iter()
+                    .map(|w| windows::Window {
+                        handle: w.handle,
+                        title: w.title,
+                        process: w.process,
+                    })
+                    .collect();
+                let (items, handles): (Vec<Item>, Vec<u64>) =
+                    windows::items(&list).into_iter().unzip();
+                self.window_handles = items.iter().map(|i| i.id.clone()).zip(handles).collect();
+                for problem in self.catalog.set_items(windows::ID, items) {
+                    self.log.line(&format!("windows: {problem}"));
+                }
+                self.windows_unavailable = None;
+            }
+            Err(why) => self.windows_unavailable = Some(why),
+        }
+    }
+
+    /// Runs a shell-prefix action: in a terminal, or hidden with the exit
+    /// status reported in the footer when it ends.
+    fn shell_action(
+        &mut self,
+        item_id: &str,
+        action_id: &str,
+        ui: &mut Ui<'_>,
+    ) -> Result<After, String> {
+        let Some(command) = shell::command_of(item_id) else {
+            return Err("there's no command to run".into());
+        };
+        let home = home_dir();
+        let terminal = action_id == shell::TERMINAL;
+        let argv = shell::argv(self.catalog.shell(), command, terminal);
+        if terminal {
+            return launch::run(&argv, home.as_deref(), true).map(|()| After::Hide);
+        }
+        let proxy = Arc::clone(&self.proxy);
+        let typed = command.to_owned();
+        launch::run_hidden(&argv, home.as_deref(), move |exit| {
+            let proxy = proxy.lock().unwrap_or_else(|e| e.into_inner());
+            proxy.send(Event::Ran {
+                command: typed,
+                exit,
+            });
+        })?;
+        self.log.line(&format!("shell: running `{command}` hidden"));
+        ui.set_message(FooterLine::info(format!("Running {command}…")));
+        Ok(After::Stay)
+    }
+
+    /// A hidden command finished: its status in the footer, and the log.
+    fn ran(&mut self, command: &str, exit: &launch::Exit, ui: &mut Ui<'_>) {
+        let status = match exit.code {
+            Some(code) => format!("exit code {code}"),
+            None => "no exit code".to_owned(),
+        };
+        let line = match (&exit.last_line, exit.success) {
+            (Some(said), true) => FooterLine::info(format!("{command}: {said}")),
+            (None, true) => FooterLine::info(format!("{command}: done")),
+            (Some(said), false) => {
+                FooterLine::error(format!("{command} failed ({status}): {said}"))
+            }
+            (None, false) => FooterLine::error(format!("{command} failed ({status})")),
+        };
+        self.log
+            .line(&format!("shell: `{command}` ended, {status}"));
+        ui.set_message(line);
+    }
+
+    /// Switches to or closes the window behind a windows-provider item.
+    fn window_action(
+        &mut self,
+        item_id: &str,
+        action_id: &str,
+        ui: &mut Ui<'_>,
+    ) -> Result<After, String> {
+        let Some(&handle) = self.window_handles.get(item_id) else {
+            return Err("that window is no longer listed".into());
+        };
+        if action_id == windows::CLOSE {
+            window_list::close(handle)?;
+            // Gone from the list now; the window may take a moment (or ask
+            // to save first), and the next show lists it again if it stays.
+            self.window_handles.remove(item_id);
+            let items: Vec<Item> = self
+                .catalog
+                .items_of(windows::ID)
+                .into_iter()
+                .filter(|i| i.id != item_id)
+                .collect();
+            self.catalog.set_items(windows::ID, items);
+            ui.set_message(FooterLine::info("Asked the window to close"));
+            return Ok(After::Search);
+        }
+        window_list::focus(handle).map(|()| After::Hide)
     }
 
     /// Something from the provider host.
@@ -737,6 +878,11 @@ impl Daemon {
         self.catalog.begin_query(query_id);
         let rows = self.catalog.search(scope.as_deref(), &text, now());
         ui.set_rows(rows);
+        if provider.as_deref() == Some(windows::ID) {
+            if let Some(why) = &self.windows_unavailable {
+                ui.set_message(FooterLine::error(why.clone()));
+            }
+        }
         // A provider's prefix typed while it is down: say why nothing
         // answers (a down provider's prefix isn't a scope keyword).
         if ui.scope().is_none() {
@@ -803,6 +949,12 @@ impl Daemon {
             }
             ActionKind::Provider if shown.provider == commands::ID => {
                 self.flint_command(&action.id, ui)
+            }
+            ActionKind::Provider if shown.provider == shell::ID => {
+                self.shell_action(&shown.item.id, &action.id, ui)
+            }
+            ActionKind::Provider if shown.provider == windows::ID => {
+                self.window_action(&shown.item.id, &action.id, ui)
             }
             ActionKind::Provider => {
                 let request = Execute {
@@ -989,6 +1141,7 @@ impl Controller for Daemon {
         }
         self.core = Some(core);
         self.configure_providers();
+        self.configure_shell();
         self.build_leader(ui);
         if let Some(adapter) = ui.adapter() {
             self.log.line(&format!(
@@ -1038,6 +1191,7 @@ impl Controller for Daemon {
             }
             Event::Apps(items) => self.apps_arrived(items, ui),
             Event::Provider(event) => self.provider_event(event, ui),
+            Event::Ran { command, exit } => self.ran(&command, &exit, ui),
             Event::Exit => {
                 self.log.line("quitting at a client's request");
                 ui.exit();

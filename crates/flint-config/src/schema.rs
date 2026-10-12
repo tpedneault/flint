@@ -221,6 +221,18 @@ pub static SETTINGS: &[Setting] = &[
         },
     },
     Setting {
+        key: "shell.program",
+        kind: Kind::Text,
+        default: "\"\"",
+        help: "The shell that runs what you type after `> ` (`pwsh`, `cmd`, `bash`, a full \
+               path). Empty: `pwsh` if it is on the `PATH`, else Windows PowerShell; on \
+               Linux, `$SHELL`, else `/bin/sh`.",
+        apply: |s, v| {
+            s.shell_program = v.as_str().unwrap_or_default().trim().to_owned();
+            Ok(vec![])
+        },
+    },
+    Setting {
         key: "leader",
         kind: Kind::Leader,
         default: "see below",

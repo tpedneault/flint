@@ -88,6 +88,9 @@ commands, `SPC r` reloads settings and `SPC s` opens them.
 | a Fenix recent file | opens it in Fenix, handing it to the Fenix already running |
 | a quicklink taking a query | puts its keyword in the query line, so you can type what fills it |
 | a scoped quicklink (`j ABC-123`) | opens the filled-in link |
+| a sum (`2 * 21`, `= sqrt(2)`) | copies the result |
+| a shell command (`> cargo build`) | runs it in a new terminal window; `Tab` `h` runs it hidden and reports how it ended |
+| a window (`w `) | brings it to the front, restoring it if minimised; `Tab` `x` asks it to close |
 | Reload settings | reads `settings.toml` again and says what's wrong, if anything |
 | Open settings | opens `settings.toml` in your editor, creating an empty one if needed |
 | Show log | opens `flint.log` |
@@ -108,6 +111,9 @@ on an empty query removes it.
 | `p` | Fenix's projects, pinned first |
 | `f` | Fenix's recent files, most recent first |
 | `flint` | Flint's own commands |
+| `w` | open windows (Windows), the one you were in first; Linux lists none yet and says why |
+| `=` | the calculator: `+ - * / %`, `^`, parentheses, `0x`/`0b` numbers, `sqrt`, `sin`, `pi`… A sum typed without `=` is answered too. |
+| `>` | the shell: what you type is run as a command (see CONFIGURATION.md, "The shell prefix") |
 | a quicklink's keyword | that link, filled with what you type |
 
 ## Ranking

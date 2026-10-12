@@ -99,6 +99,7 @@ it is out of date.
 | `behaviour.hide_on_blur` | `true` or `false` | `true` | Hide Flint when it loses focus, as when you click another window. |
 | `behaviour.escape_hides` | `true` or `false` | `false` | Make `Esc` hide Flint from either mode, as Raycast does. By default `Esc` in Insert mode goes to Normal mode, where a second `Esc` (or `q`) hides. |
 | `fenix.executable` | text | `""` | The `fenix` program Flint opens files with. Empty: `fenix` on the `PATH`, else beside the `flint` program. |
+| `shell.program` | text | `""` | The shell that runs what you type after `> ` (`pwsh`, `cmd`, `bash`, a full path). Empty: `pwsh` if it is on the `PATH`, else Windows PowerShell; on Linux, `$SHELL`, else `/bin/sh`. |
 | `leader` | a table of key sequences and actions | `see below` | What `SPC` sequences do in Normal mode: `"f r" = "scope:fenix.recent"`. An action is `scope:<provider>`, `flint:<command>`, `fenix:<command>` or `query:<text>`; a table `{ action = ..., label = ... }` adds a label, and `{ label = ... }` names a group. Without the table, the defaults below apply; with it, the table is the whole map. |
 | `providers` | entries with `name`, `command`, `connect`, `prefix` | `[]` | External providers (docs/PROVIDERS.md). `command` is the program and its arguments, as a list, started by Flint in the settings folder and talked to over its stdin and stdout; `connect = true` instead waits for a running program to connect to Flint itself. `prefix` overrides the provider's own scope keyword. Only providers named here ever run. |
 | `quicklinks` | entries with `keyword`, `name`, `url` | `[]` | Links with a keyword: typing the keyword and a space scopes the query to the link, and `Enter` opens `url` with `{query}` replaced by what you typed, percent-encoded. A link without `{query}` just opens. Written as `[[quicklinks]]` tables (see the example above). |
@@ -133,10 +134,10 @@ still found by its name, and choosing it puts its keyword in the query
 line for you. A URL without `{query}` simply opens.
 
 - `keyword` must be one word, unique among your links (and is what a
-  leader binding names: `scope:quicklink.j`). `a`, `p`, `f` and
-  `flint` belong to Flint's Apps, Fenix projects, Fenix recent files and
-  Flint commands; a link that names one keeps
-  working by name, and `flint status` says why its keyword doesn't.
+  leader binding names: `scope:quicklink.j`). `a`, `p`, `f`, `w`, `=`,
+  `>` and `flint` belong to Flint's Apps, Fenix projects, Fenix recent
+  files, windows, calculator, shell and commands; a link that names one
+  keeps working by name, and `flint status` says why its keyword doesn't.
 - `url` needs a scheme (`https:`, `mailto:`, …).
 - A bad entry is skipped with its reason; the others still work.
 
@@ -168,6 +169,18 @@ prefix = "ji"         # instead of the provider's own scope keyword
   `restarting`, `disabled` and why); what it writes to stderr goes to
   `logs/providers/<name>.log` beside `flint.log`.
 
+### The shell prefix
+
+`> ` runs what you type after it with your shell: `Enter` in a new
+terminal window that stays open afterwards, `Tab` then `h` hidden, with
+its exit status and the last line it printed in the footer when it ends.
+Commands run in your home folder. `shell.program` picks the shell; the
+command reaches it as one argument (`pwsh -Command <what you typed>`,
+`bash -c <what you typed>`), so it means exactly what it would at that
+shell's prompt. With `cmd`, a command containing double quotes may be
+split differently than at the prompt, since `cmd` doesn't follow the
+usual quoting rules; PowerShell, the default, does.
+
 ### The leader
 
 `SPC` in Normal mode opens Flint's leader: a list of keys and what each
@@ -177,7 +190,7 @@ to actions:
 
 | Action | Does |
 |---|---|
-| `scope:<provider>` | limits the query to `apps`, `flint`, `fenix.projects`, `fenix.recent` or `quicklink.<keyword>`, and goes to Insert mode |
+| `scope:<provider>` | limits the query to `apps`, `flint`, `fenix.projects`, `fenix.recent`, `windows`, `calculator`, `shell`, an external provider's name or `quicklink.<keyword>`, and goes to Insert mode |
 | `flint:<command>` | runs `reload`, `settings`, `log` or `quit` |
 | `fenix:<command>` | runs a Fenix command; needs a newer Fenix (it says so until then) |
 | `query:<text>` | replaces the query line with `text` |
@@ -195,6 +208,7 @@ Without a `[leader]` table these apply:
 | `a` | Apps |
 | `p` | Fenix projects |
 | `f` | Fenix recent files |
+| `w` | Open windows |
 | `l` | Flint's commands |
 | `r` | Reload settings |
 | `s` | Open settings |

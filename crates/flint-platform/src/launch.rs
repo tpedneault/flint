@@ -118,6 +118,114 @@ pub fn run(argv: &[String], cwd: Option<&str>, terminal: bool) -> Result<(), Str
     }
 }
 
+/// How a hidden command ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Exit {
+    /// Whether it succeeded (exit code 0).
+    pub success: bool,
+    /// Its exit code, when it has one (not when killed by a signal).
+    pub code: Option<i32>,
+    /// The last non-empty line it printed, stderr's before stdout's: what
+    /// a failing command says about why.
+    pub last_line: Option<String>,
+}
+
+/// Runs `argv` in `cwd` with no window, and calls `done` from another
+/// thread once it has exited. Its output is read as it comes and only the
+/// last line kept, so a chatty command costs no memory and never blocks
+/// on a full pipe. Errors starting it come back at once, as from [`run`].
+pub fn run_hidden(
+    argv: &[String],
+    cwd: Option<&str>,
+    done: impl FnOnce(Exit) + Send + 'static,
+) -> Result<(), String> {
+    use std::io::{BufRead, BufReader, Read};
+    use std::sync::mpsc;
+
+    let Some(program) = argv.first() else {
+        return Err("nothing to run".into());
+    };
+    let mut command = command(argv, cwd);
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("couldn't start {program}: {e}"))?;
+    // Bytes, not UTF-8: a console program's output may be in the OEM
+    // code page, and one bad byte mustn't lose the line.
+    fn last_line(stream: impl Read + Send + 'static) -> mpsc::Receiver<Option<String>> {
+        let (tx, rx) = mpsc::channel();
+        let _ = std::thread::Builder::new()
+            .name("flint-run-output".into())
+            .spawn(move || {
+                let mut reader = BufReader::new(stream);
+                let mut last = None;
+                let mut line = Vec::new();
+                loop {
+                    line.clear();
+                    match reader.read_until(b'\n', &mut line) {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) => {
+                            let text = String::from_utf8_lossy(&line).trim().to_owned();
+                            if !text.is_empty() {
+                                last = Some(text);
+                            }
+                        }
+                    }
+                }
+                let _ = tx.send(last);
+            });
+        rx
+    }
+    let stdout = child.stdout.take().map(last_line);
+    let stderr = child.stderr.take().map(last_line);
+    std::thread::Builder::new()
+        .name("flint-run-wait".into())
+        .spawn(move || {
+            let status = child.wait();
+            let take = |rx: Option<mpsc::Receiver<Option<String>>>| {
+                rx.and_then(|rx| {
+                    rx.recv_timeout(std::time::Duration::from_secs(1))
+                        .ok()
+                        .flatten()
+                })
+            };
+            let (err, out) = (take(stderr), take(stdout));
+            let last_line = err.or(out).map(|line| {
+                let mut chars = line.chars();
+                let short: String = chars.by_ref().take(160).collect();
+                if chars.next().is_some() {
+                    format!("{short}…")
+                } else {
+                    short
+                }
+            });
+            done(match status {
+                Ok(status) => Exit {
+                    success: status.success(),
+                    code: status.code(),
+                    last_line,
+                },
+                Err(_) => Exit {
+                    success: false,
+                    code: None,
+                    last_line,
+                },
+            });
+        })
+        .map(|_| ())
+        .map_err(|e| format!("couldn't wait for {program}: {e}"))
+}
+
 /// `argv` wrapped to run in a terminal: `$TERMINAL` if set, else the first
 /// of the usual ones that is installed. Most take `-e program args...`;
 /// GNOME's takes `--`.
@@ -142,7 +250,9 @@ fn in_terminal(argv: &[String]) -> Vec<String> {
     wrapped
 }
 
-fn on_path(program: &str) -> bool {
+/// Whether `program` (a file name, with `.exe` on Windows) is in a
+/// folder on the `PATH`.
+pub fn on_path(program: &str) -> bool {
     std::env::var_os("PATH")
         .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(program).is_file()))
 }
@@ -270,6 +380,27 @@ mod tests {
         assert_eq!(argv[6], "array:string:file:///home/me/My%20Notes%2Cv2.md");
         assert_eq!(argv[7], "string:");
         assert_eq!(file_uri("/a/é"), "file:///a/%C3%A9");
+    }
+
+    #[test]
+    fn a_hidden_command_reports_its_status_and_last_line() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let parts: &[&str] = if cfg!(windows) {
+            &["cmd", "/d", "/c", "echo first & echo second 1>&2 & exit 3"]
+        } else {
+            &["sh", "-c", "echo first; echo second >&2; exit 3"]
+        };
+        let argv: Vec<String> = parts.iter().map(|s| s.to_string()).collect();
+        run_hidden(&argv, None, move |exit| {
+            let _ = tx.send(exit);
+        })
+        .unwrap();
+        let exit = rx.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
+        assert!(!exit.success);
+        assert_eq!(exit.code, Some(3));
+        assert_eq!(exit.last_line.as_deref(), Some("second"), "stderr wins");
+        let err = run_hidden(&["definitely-not-a-program-xyz".into()], None, |_| {}).unwrap_err();
+        assert!(err.starts_with("couldn't start definitely-not-a-program-xyz: "));
     }
 
     #[test]

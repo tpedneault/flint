@@ -5,8 +5,9 @@ to Fenix (https://github.com/tpedneault/fenix) and the tools built around
 it. The design is settled; M0 (workspace), M1 (daemon, endpoint, CLI,
 hotkey, window), M2 (search, modes, apps, quicklinks, frecency), M3
 (Fenix level 0: projects, recent files, theme), M4 (action menu,
-which-key leader, footer messages) and M5 (external providers, two
-examples) are in place, and the milestones from M6 fill in the rest.
+which-key leader, footer messages), M5 (external providers, two
+examples) and M6 (windows, calculator, shell prefix, autostart) are in
+place, and M7 (Fenix's control protocol) and M8 fill in the rest.
 
 ## Read first, in this order
 

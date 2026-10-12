@@ -22,6 +22,10 @@ pub enum Command {
     Help,
     /// `flint`: start the daemon hidden, or show the running one.
     Default,
+    /// `flint autostart [on|off]`: turn starting at login on or off, or
+    /// (with neither) say whether it is on. Done by this process; no
+    /// daemon is involved.
+    Autostart(Option<bool>),
     /// Anything sent to the daemon.
     Request(ClientRequest),
 }
@@ -50,7 +54,7 @@ impl Command {
         match self {
             Command::Default => Some(ClientRequest::Show(ShowParams::default())),
             Command::Request(request) => Some(request.clone()),
-            Command::Version | Command::Help => None,
+            Command::Version | Command::Help | Command::Autostart(_) => None,
         }
     }
 }
@@ -77,6 +81,8 @@ Commands:
                        hotkey-to-frame times
   reload               Read settings.toml again and report problems
   quit                 Stop Flint
+  autostart [on|off]   Start Flint (hidden) when you log in, or stop doing so;
+                       alone, say whether it does
 
 Options:
   --console            Windows: show the daemon's log in a console window
@@ -113,6 +119,9 @@ pub fn parse(args: &[String]) -> Result<Cli, String> {
         }
         ["reload"] => Command::Request(ClientRequest::Reload),
         ["quit"] => Command::Request(ClientRequest::Quit),
+        ["autostart"] => Command::Autostart(None),
+        ["autostart", "on"] => Command::Autostart(Some(true)),
+        ["autostart", "off"] => Command::Autostart(Some(false)),
         [first, rest @ ..] => {
             let known = [
                 "--version",
@@ -125,6 +134,7 @@ pub fn parse(args: &[String]) -> Result<Cli, String> {
                 "status",
                 "reload",
                 "quit",
+                "autostart",
             ];
             let wrong = if known.contains(first) {
                 rest.first().copied().unwrap_or(first)
@@ -174,6 +184,15 @@ mod tests {
         assert_eq!(command(&["--help"]), Command::Help);
         assert_eq!(command(&["hide"]), Command::Request(ClientRequest::Hide));
         assert_eq!(command(&["quit"]), Command::Request(ClientRequest::Quit));
+        assert_eq!(command(&["autostart"]), Command::Autostart(None));
+        assert_eq!(
+            command(&["autostart", "on"]),
+            Command::Autostart(Some(true))
+        );
+        assert_eq!(
+            command(&["autostart", "off"]),
+            Command::Autostart(Some(false))
+        );
         assert_eq!(
             command(&["reload"]),
             Command::Request(ClientRequest::Reload)
@@ -209,6 +228,7 @@ mod tests {
             (&["status", "--verbose"][..], "`--verbose`"),
             (&["--version", "extra"][..], "`extra`"),
             (&["show", "--query"][..], "`--query`"),
+            (&["autostart", "maybe"][..], "`maybe`"),
         ] {
             let err = cli(args).unwrap_err();
             assert!(err.contains(named), "{args:?}: {err}");
@@ -224,7 +244,14 @@ mod tests {
             .unwrap()
             .show;
         assert_eq!(shown.unwrap().query.as_deref(), Some("p "));
-        for args in [&["hide"][..], &["status"], &["reload"], &["quit"], &["-V"]] {
+        for args in [
+            &["hide"][..],
+            &["status"],
+            &["reload"],
+            &["quit"],
+            &["-V"],
+            &["autostart", "on"],
+        ] {
             assert!(command(args).starts_daemon().is_none(), "{args:?}");
         }
     }
