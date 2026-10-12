@@ -45,10 +45,10 @@ use flint_config::{Chord, Folders, Loaded};
 use flint_fenix::{items as fenix, look, Look, Roots, Stamps};
 use flint_gui::theme::{self, ORBIT_DARK};
 use flint_gui::{Controller, FooterLine, Gui, Proxy, ShowRequest, Shown, Ui};
-use flint_host::{ClientHandler, HostEvent, ProviderHost, State as ProviderState, Timing};
+use flint_host::{ClientHandler, HostEvent, ProviderHost, Secret, State as ProviderState, Timing};
 use flint_platform::{
-    console, foreground, launch, process, window_list, Clipboard, Hotkey, HotkeyError, Listener,
-    SystemHotkey,
+    console, credentials, foreground, launch, process, window_list, Clipboard, Hotkey, HotkeyError,
+    Listener, SystemHotkey,
 };
 use flint_protocol::client::{
     Adapter, HotkeyState, HotkeyStatus, ProviderStatus, ReloadResult, ShowParams, Status,
@@ -636,10 +636,26 @@ impl Daemon {
         self.providers.configure(
             configs
                 .into_iter()
-                .map(|c| flint_host::ProviderConfig {
-                    name: c.name,
-                    command: c.command,
-                    connect: c.connect,
+                .map(|c| {
+                    // Read on every configure, so a secret stored since
+                    // (`flint credential set`, then a reload) is picked up
+                    // and the provider restarted with it.
+                    let secret = match &c.credential {
+                        None => Secret::None,
+                        Some(name) => match credentials::get(name) {
+                            Ok(Some(secret)) => Secret::Value(secret),
+                            Ok(None) => Secret::Missing(format!(
+                                "no `{name}` in the credential store; run `flint credential set {name}`"
+                            )),
+                            Err(why) => Secret::Missing(why),
+                        },
+                    };
+                    flint_host::ProviderConfig {
+                        name: c.name,
+                        command: c.command,
+                        connect: c.connect,
+                        secret,
+                    }
                 })
                 .collect(),
         );

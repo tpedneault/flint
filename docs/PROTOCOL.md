@@ -42,7 +42,7 @@ side may send requests; ids are per-direction.
 
 | Channel | Who starts it | Used by |
 |---|---|---|
-| stdio | Flint spawns the provider from `[[providers]] command`; Flint writes to its stdin and reads its stdout; stderr goes to the provider's log, `logs/providers/<name>.log` | most providers |
+| stdio | Flint spawns the provider from `[[providers]] command`; Flint writes to its stdin and reads its stdout; stderr goes to the provider's log, `logs/providers/<name>.log`; with `[[providers]] credential`, its secret is in the environment variable `FLINT_PROVIDER_SECRET` | most providers |
 | control endpoint | the other process connects to Flint's per-user pipe/socket (see DESIGN.md, Security) | the `flint` CLI client; long-running apps acting as providers (`connect = true`) |
 
 ## Roles and handshake

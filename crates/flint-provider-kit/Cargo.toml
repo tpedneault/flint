@@ -1,0 +1,20 @@
+[package]
+name = "flint-provider-kit"
+description = "The provider side of Flint's protocol, for the providers that ship with Flint."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+flint-protocol = { path = "../flint-protocol" }
+serde_json = { workspace = true }
+
+[features]
+# `testing`: a fake HTTP server for providers' tests (testing.rs).
+testing = []

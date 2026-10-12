@@ -10,6 +10,8 @@
 //! - `flood`: answers a query with an oversized batch, then a stale one,
 //!   then a good one.
 //! - `wrongname`: says `hello` under another name.
+//! - `secret`: as `normal`, its first item titled with the secret it was
+//!   started with (`none` without one).
 //!
 //! Not an example of how to write a provider (see `examples/` for those);
 //! it exists to misbehave on purpose.
@@ -66,6 +68,11 @@ fn main() {
         eprintln!("crashing on purpose");
         std::process::exit(3);
     }
+    let first_title = if mode == "secret" {
+        std::env::var(flint_protocol::provider::SECRET_ENV).unwrap_or_else(|_| "none".into())
+    } else {
+        "One".into()
+    };
     send(
         &mut out,
         &Message::request(
@@ -73,7 +80,7 @@ fn main() {
             "provider/register",
             json!({
                 "id": name, "title": "Test", "prefix": "t", "dynamic": true,
-                "items": [item(&format!("{name}:one"), "One"), item(&format!("{name}:two"), "Two")]
+                "items": [item(&format!("{name}:one"), &first_title), item(&format!("{name}:two"), "Two")]
             }),
         ),
     );

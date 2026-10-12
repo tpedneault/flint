@@ -9,8 +9,8 @@ This document is the design the first implementation follows. The wire
 protocol is in [PROTOCOL.md](PROTOCOL.md); what Flint needs from Fenix,
 and what Fenix has to add, is in [FENIX-INTEGRATION.md](FENIX-INTEGRATION.md).
 
-Status: M7 implemented as far as Fenix allows (commands, capture and the
-agenda wait for F5/F6) (see [ARCHITECTURE.md](ARCHITECTURE.md)). Pinned against Fenix
+Status: M8 implemented; M7 as far as Fenix allows (commands, capture and
+the agenda wait for F5/F6) (see [ARCHITECTURE.md](ARCHITECTURE.md)). Pinned against Fenix
 `899507281efcb3769cc7f941d1b1c00b8558b96e` (2026-10-12).
 
 ## Why the name
@@ -180,7 +180,8 @@ fenix-storage = { git = "https://github.com/tpedneault/fenix", rev = "899507281e
 | `fenix-keymap` | The leader trie and `KeyPress` model, so key handling is identical to Fenix | no dependencies |
 | `fenix-rpc` | `Content-Length` framing, already proven against LSP/DAP (writer now; reader once it is bounded, F16) | no dependencies |
 | `fenix-storage` | Fenix's folder resolution (`FENIX_HOME` included), its keyed state files, atomic writes | `dirs`, `serde_json`, `tempfile`, `toml_edit` |
-| `fenix-jira` | Later (milestone 8), for the Jira provider | `ureq` with native certs |
+| `fenix-jira` | The Jira provider (M8): the REST calls, the bearer token, the OS certificate store | `ureq` with native certs |
+| `fenix-gitlab`, `fenix-forge` | The GitLab provider (M8): `/api/v4`, `PRIVATE-TOKEN`, and the forge-neutral merge request model it returns | `ureq` with native certs; `fenix-forge` none |
 
 Do **not** depend on `fenix-project`: it pulls in `fenix-mib` and
 `fenix-ccsds` to read two JSON keys. Read `state/projects.json` and

@@ -8,8 +8,9 @@ hotkey, window), M2 (search, modes, apps, quicklinks, frecency), M3
 which-key leader, footer messages), M5 (external providers, two
 examples), M6 (windows, calculator, shell prefix, autostart) and M7's
 first part (Fenix level 1 over Fenix's control channel: projects, files at
-a line, context) are in place. M7's commands, capture and agenda wait for
-Fenix's F5/F6; then M8.
+a line, context) and M8 (Jira and GitLab providers, credentials in the OS
+store) are in place. M7's commands, capture and agenda wait for Fenix's
+F5/F6.
 
 ## Read first, in this order
 
@@ -33,7 +34,8 @@ Fenix's F5/F6; then M8.
   Fenix work happens in its own repository and its own pull requests.
 - **Depend on Fenix crates by git and pinned `rev`** (DESIGN.md,
   "Dependencies on Fenix crates"). Only `fenix-control`, `fenix-keymap`,
-  `fenix-rpc`, `fenix-storage` now; `fenix-jira`/`fenix-gitlab` in M8. Not
+  `fenix-rpc`, `fenix-storage`, and since M8 `fenix-jira`, `fenix-gitlab`,
+  `fenix-forge`. Not
   `fenix-project`, not `fenix-gui`, not `fenix-picker`.
 - **Windows is the primary platform**, Linux (KDE Plasma 6, Wayland)
   second. CI runs both. Code that can't be tested in CI (hotkeys, focus,

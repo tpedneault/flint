@@ -8,7 +8,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use flint_host::{HostEvent, ProviderConfig, ProviderHost, State, Timing};
+use flint_host::{HostEvent, ProviderConfig, ProviderHost, Secret, State, Timing};
 use flint_protocol::provider::{Context, Execute};
 use flint_protocol::HostInfo;
 
@@ -55,7 +55,7 @@ fn test_provider(mode: &str, name: &str) -> ProviderConfig {
             mode.into(),
             name.into(),
         ],
-        connect: false,
+        ..ProviderConfig::default()
     }
 }
 
@@ -252,7 +252,7 @@ fn a_missing_program_is_disabled_at_once() {
     host.configure(vec![ProviderConfig {
         name: "ghost".into(),
         command: vec!["definitely-not-a-provider-xyz".into()],
-        connect: false,
+        ..ProviderConfig::default()
     }]);
     let state = settle(&host, "ghost", |s| matches!(s, State::Disabled(_)));
     assert!(
@@ -311,7 +311,7 @@ fn the_python_example_provider_works() {
     host.configure(vec![ProviderConfig {
         name: "bookmarks".into(),
         command: vec![python.into(), script.display().to_string()],
-        connect: false,
+        ..ProviderConfig::default()
     }]);
     let HostEvent::Items { items, .. } =
         wait_for(&events, |e| matches!(e, HostEvent::Items { .. }))
@@ -338,5 +338,29 @@ fn the_python_example_provider_works() {
     };
     assert_eq!(t, token);
     assert!(outcome.unwrap().message.unwrap().contains("bookmark"));
+    host.shutdown();
+}
+
+#[test]
+fn a_secret_reaches_its_provider_and_a_missing_one_stops_it_starting() {
+    let (host, events) = host();
+    let mut given = test_provider("secret", "keyed");
+    given.secret = Secret::Value("s3cret".into());
+    let mut missing = test_provider("secret", "locked");
+    missing.secret = Secret::Missing("no `jira:x` in the credential store".into());
+    host.configure(vec![given, missing]);
+    let HostEvent::Items { items, .. } = wait_for(
+        &events,
+        |e| matches!(e, HostEvent::Items { name, .. } if name == "keyed"),
+    ) else {
+        unreachable!()
+    };
+    assert_eq!(
+        items[0].title, "s3cret",
+        "the secret came through the environment"
+    );
+    let state = settle(&host, "locked", |s| matches!(s, State::Disabled(_)));
+    assert_eq!(state.reason(), Some("no `jira:x` in the credential store"));
+    assert!(!format!("{:?}", Secret::Value("s3cret".into())).contains("s3cret"));
     host.shutdown();
 }

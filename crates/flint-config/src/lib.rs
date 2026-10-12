@@ -89,6 +89,29 @@ pub struct ProviderConfig {
     pub connect: bool,
     /// Overrides the provider's own scope keyword.
     pub prefix: Option<String>,
+    /// The credential Flint hands it when starting it: an entry in the OS
+    /// credential store, named `<kind>:<where>` (`jira:https://…`).
+    pub credential: Option<String>,
+}
+
+/// Whether `name` is a credential name Flint accepts: `<kind>:<where>`
+/// (`jira:https://jira.example.com`), the kind lowercase letters and the
+/// place not blank. The names FENIX-INTEGRATION.md's F12 agrees for the
+/// suite have this shape.
+pub fn check_credential_name(name: &str) -> Result<(), String> {
+    match name.split_once(':') {
+        Some((kind, place))
+            if !kind.is_empty()
+                && kind.bytes().all(|b| b.is_ascii_lowercase())
+                && !place.trim().is_empty()
+                && name.trim() == name =>
+        {
+            Ok(())
+        }
+        _ => Err(format!(
+            "`{name}` isn't a credential name; they look like `jira:https://jira.example.com`"
+        )),
+    }
 }
 
 /// One `[[quicklinks]]` entry.

@@ -22,4 +22,4 @@ pub mod control;
 pub mod providers;
 
 pub use control::{serve, serve_connection, ClientHandler};
-pub use providers::{HostEvent, ProviderConfig, ProviderHost, State, Status, Timing};
+pub use providers::{HostEvent, ProviderConfig, ProviderHost, Secret, State, Status, Timing};

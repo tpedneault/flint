@@ -94,6 +94,13 @@ All notable changes to Flint are recorded here. The format follows
   from, providers get its project and file as context. With no Fenix
   running, Flint starts one with the request (`--project`, `--goto`).
   `flint status` says which level and what Fenix offers.
+- Jira and GitLab: `flint-jira` (`j `: your open issues, Jira text
+  search, issue keys) and `flint-gitlab` (`mr `: your open merge requests
+  in the projects you name) ship with Flint as providers, built on
+  Fenix's own Jira and GitLab clients.
+- `flint credential set|delete <name>`: tokens in the OS credential store,
+  never in `settings.toml`; `[[providers]] credential` hands one to a
+  provider when Flint starts it.
 
 ### Fixed
 

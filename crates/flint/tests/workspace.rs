@@ -176,10 +176,12 @@ fn only_gui_and_platform_touch_the_os_or_window_system() {
 
 #[test]
 fn fenix_crates_are_pinned_once_and_only_the_allowed_ones() {
-    // docs/DESIGN.md, "Dependencies on Fenix crates". `fenix-jira` and
-    // `fenix-gitlab` join this list in M8.
-    const ALLOWED: [&str; 4] = [
+    // docs/DESIGN.md, "Dependencies on Fenix crates".
+    const ALLOWED: [&str; 7] = [
         "fenix-control",
+        "fenix-forge",
+        "fenix-gitlab",
+        "fenix-jira",
         "fenix-keymap",
         "fenix-rpc",
         "fenix-storage",

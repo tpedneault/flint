@@ -4,11 +4,14 @@ members = [
     "crates/flint",
     "crates/flint-config",
     "crates/flint-fenix",
+    "crates/flint-gitlab",
     "crates/flint-gui",
     "crates/flint-host",
     "crates/flint-index",
+    "crates/flint-jira",
     "crates/flint-platform",
     "crates/flint-protocol",
+    "crates/flint-provider-kit",
     "crates/flint-providers",
     "examples/provider-rust",
 ]
@@ -27,10 +30,14 @@ publish = false
 # revision the design was checked against (docs/DESIGN.md, "Dependencies on
 # Fenix crates"). Cargo resolves an entry here only once a member uses it,
 # so listing them before they are needed costs nothing and keeps the pin in
-# one place. Only these four until M8 adds `fenix-jira`/`fenix-gitlab`;
+# one place. Since M8, `fenix-jira`, `fenix-gitlab` and the `fenix-forge`
+# model it implements too;
 # never `fenix-project`, `fenix-gui` or `fenix-picker`.
 [workspace.dependencies]
 fenix-control = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
+fenix-forge = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
+fenix-gitlab = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
+fenix-jira = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
 fenix-keymap = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
 fenix-rpc = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
 fenix-storage = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }

@@ -25,6 +25,11 @@ pub fn run(stream: Stream, request: ClientRequest) -> ExitCode {
     }
 }
 
+/// Asks the daemon to reload, printing nothing; whether it did.
+pub fn reload_quietly(stream: Stream) -> bool {
+    call(stream, &ClientRequest::Reload).is_ok()
+}
+
 fn call(stream: Stream, request: &ClientRequest) -> Result<String, String> {
     let reader = stream
         .try_clone()

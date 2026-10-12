@@ -250,13 +250,16 @@ pub static SETTINGS: &[Setting] = &[
     },
     Setting {
         key: "providers",
-        kind: Kind::Records(&["name", "command", "connect", "prefix"]),
+        kind: Kind::Records(&["name", "command", "connect", "prefix", "credential"]),
         default: "[]",
         help: "External providers (docs/PROVIDERS.md). `command` is the program and its \
                arguments, as a list, started by Flint in the settings folder and talked \
                to over its stdin and stdout; `connect = true` instead waits for a running \
                program to connect to Flint itself. `prefix` overrides the provider's own \
-               scope keyword. Only providers named here ever run.",
+               scope keyword. `credential` names a secret in the OS credential store \
+               (`jira:https://jira.example.com`, stored with `flint credential set`) that \
+               Flint gives the provider when it starts it. Only providers named here ever \
+               run.",
         apply: |s, v| {
             let (providers, problems) = providers(v);
             s.providers = providers;
@@ -382,11 +385,27 @@ fn providers(value: &Value) -> (Vec<ProviderConfig>, Vec<String>) {
                 }
                 Some(_) => return Err("`prefix` must be one word".into()),
             };
+            let credential = match entry.get("credential") {
+                None => None,
+                Some(Value::String(c)) => {
+                    crate::check_credential_name(c)?;
+                    if connect {
+                        return Err(
+                            "`credential` is for a provider Flint starts; one that connects \
+                             has its own"
+                                .into(),
+                        );
+                    }
+                    Some(c.clone())
+                }
+                Some(_) => return Err("`credential` must be a name like \"jira:https://…\"".into()),
+            };
             Ok(ProviderConfig {
                 name: name.to_owned(),
                 command: command.unwrap_or_default(),
                 connect,
                 prefix,
+                credential,
             })
         })();
         match checked {
@@ -526,6 +545,7 @@ mod tests {
             name = "jira"
             command = ["flint-jira", "--verbose"]
             prefix = "j"
+            credential = "jira:https://jira.example.com"
             [[providers]]
             name = "fenix-live"
             connect = true
@@ -544,6 +564,10 @@ mod tests {
             [[providers]]
             name = "jira"
             command = ["again"]
+            [[providers]]
+            name = "badcred"
+            command = ["x"]
+            credential = "just-a-token"
         "#
         .parse()
         .unwrap();
@@ -552,7 +576,15 @@ mod tests {
         assert_eq!(names, ["jira", "fenix-live"]);
         assert_eq!(providers[0].command, ["flint-jira", "--verbose"]);
         assert!(providers[1].connect && providers[1].command.is_empty());
-        assert_eq!(problems.len(), 5, "{problems:?}");
+        assert_eq!(
+            providers[0].credential.as_deref(),
+            Some("jira:https://jira.example.com")
+        );
+        assert_eq!(problems.len(), 6, "{problems:?}");
+        assert!(
+            problems[5].contains("isn't a credential name"),
+            "{problems:?}"
+        );
         assert!(problems[1].contains("never one string"), "no shell strings");
     }
 

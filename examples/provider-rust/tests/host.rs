@@ -29,7 +29,7 @@ fn flint_runs_the_example() {
     host.configure(vec![ProviderConfig {
         name: "numbers".into(),
         command: vec![env!("CARGO_BIN_EXE_flint-example-provider").into()],
-        connect: false,
+        ..ProviderConfig::default()
     }]);
     let next = |want: &dyn Fn(&HostEvent) -> bool| loop {
         let event = events

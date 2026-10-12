@@ -32,9 +32,68 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use flint_platform::autostart::{self, State};
+use flint_platform::credentials;
 use flint_platform::{console, BindError, Endpoint};
 
 use crate::cli::Command;
+
+/// `flint credential ...`. After a change, a running Flint is asked to
+/// reload, so the provider that wanted the secret starts (or restarts)
+/// with it.
+fn credential(what: &cli::Credential) -> ExitCode {
+    let (cli::Credential::Set(name) | cli::Credential::Delete(name) | cli::Credential::Check(name)) =
+        what;
+    if let Err(why) = flint_config::check_credential_name(name) {
+        eprintln!("flint: {why}");
+        return ExitCode::from(2);
+    }
+    let done = match what {
+        cli::Credential::Check(_) => {
+            return match credentials::get(name) {
+                Ok(Some(_)) => {
+                    println!("{name} is stored");
+                    ExitCode::SUCCESS
+                }
+                Ok(None) => {
+                    println!("{name} isn't stored");
+                    ExitCode::FAILURE
+                }
+                Err(why) => {
+                    eprintln!("flint: {why}");
+                    ExitCode::FAILURE
+                }
+            };
+        }
+        cli::Credential::Set(_) => console::read_secret(&format!("Secret for {name}: "))
+            .map_err(|e| format!("couldn't read the secret: {e}"))
+            .and_then(|secret| match secret.trim() {
+                "" => Err("nothing was entered; nothing stored".into()),
+                secret => credentials::set(name, secret),
+            })
+            .map(|()| format!("{name} stored")),
+        cli::Credential::Delete(_) => credentials::delete(name).map(|()| format!("{name} removed")),
+    };
+    match done {
+        Ok(said) => {
+            let endpoint = Endpoint::for_user(std::env::var_os("FLINT_HOME").as_deref());
+            let reloaded = endpoint
+                .connect()
+                .ok()
+                .flatten()
+                .is_some_and(client::reload_quietly);
+            if reloaded {
+                println!("{said}; Flint has reloaded its providers");
+            } else {
+                println!("{said}");
+            }
+            ExitCode::SUCCESS
+        }
+        Err(why) => {
+            eprintln!("flint: {why}");
+            ExitCode::FAILURE
+        }
+    }
+}
 
 /// `flint autostart [on|off]`.
 fn autostart(turn: Option<bool>) -> ExitCode {
@@ -86,6 +145,10 @@ fn main() -> ExitCode {
         Command::Autostart(turn) => {
             console::attach_parent();
             return autostart(*turn);
+        }
+        Command::Credential(what) => {
+            console::attach_parent();
+            return credential(what);
         }
         command => command.request(),
     };

@@ -17,6 +17,8 @@ arboard = { version = "3.6", default-features = false, features = ["wayland-data
 flint-config = { path = "../flint-config" }
 # Fenix's control endpoint, named and opened as Fenix does it (fenix.rs).
 fenix-control = { workspace = true }
+# The OS credential store: Credential Manager, the Secret Service (credentials.rs).
+keyring = { version = "3.6", features = ["windows-native", "sync-secret-service", "crypto-rust"] }
 
 [target.'cfg(windows)'.dependencies]
 global-hotkey = { workspace = true }
