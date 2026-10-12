@@ -161,7 +161,10 @@ fn a_crashing_provider_is_restarted_then_disabled_with_the_reason() {
     let why = disabled.reason().unwrap().to_owned();
     assert!(why.contains("stopped 3 times"), "{why}");
     assert!(why.contains("exit"), "the exit status is named: {why}");
-    assert!(why.ends_with("crashing on purpose"), "and what it said: {why}");
+    assert!(
+        why.ends_with("crashing on purpose"),
+        "and what it said: {why}"
+    );
     // A reload with the same settings gives it another chance.
     host.configure(vec![test_provider("crash", "crashy")]);
     settle(&host, "crashy", |s| !matches!(s, State::Disabled(_)));

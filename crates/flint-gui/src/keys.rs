@@ -12,7 +12,7 @@ pub fn presses(key: &Key, mods: ModifiersState) -> Vec<Press> {
     let ctrl = mods.control_key();
     let alt = mods.alt_key();
     match key {
-        Key::Named(named) => named_press(*named, ctrl).into_iter().collect(),
+        Key::Named(named) => named_press(*named, ctrl, alt).into_iter().collect(),
         Key::Character(text) => {
             // AltGr arrives as Ctrl+Alt on Windows, and is how many
             // layouts type `@`, `{` or `€`: that is text, not a shortcut.
@@ -37,7 +37,7 @@ pub fn presses(key: &Key, mods: ModifiersState) -> Vec<Press> {
     }
 }
 
-fn named_press(key: NamedKey, ctrl: bool) -> Option<Press> {
+fn named_press(key: NamedKey, ctrl: bool, alt: bool) -> Option<Press> {
     Some(match key {
         NamedKey::Escape => Press::Escape,
         NamedKey::Enter => Press::Enter,
@@ -46,7 +46,11 @@ fn named_press(key: NamedKey, ctrl: bool) -> Option<Press> {
         NamedKey::ArrowUp => Press::Up,
         NamedKey::ArrowDown => Press::Down,
         NamedKey::Tab => Press::Tab,
-        NamedKey::Space if !ctrl => Press::Char(' '),
+        // Alt+Space is the default hotkey: the press that shows Flint (or
+        // its key-repeat, while Alt is still held) reaches the window once
+        // it has focus, and would type a space ahead of the query, so `b `
+        // no longer scoped to `b`. A chord is never text.
+        NamedKey::Space if !ctrl && !alt => Press::Char(' '),
         _ => return None,
     })
 }
@@ -107,5 +111,17 @@ mod tests {
             assert_eq!(presses(&Key::Named(named), none), [press]);
         }
         assert!(presses(&Key::Named(NamedKey::F1), none).is_empty());
+        assert_eq!(
+            presses(&Key::Named(NamedKey::Space), none),
+            [Press::Char(' ')]
+        );
+    }
+
+    #[test]
+    fn the_hotkeys_space_is_not_typed() {
+        let space = Key::Named(NamedKey::Space);
+        assert!(presses(&space, ModifiersState::ALT).is_empty());
+        assert!(presses(&space, ModifiersState::CONTROL | ModifiersState::SHIFT).is_empty());
+        assert_eq!(presses(&space, ModifiersState::SHIFT), [Press::Char(' ')]);
     }
 }

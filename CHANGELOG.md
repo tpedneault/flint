@@ -75,3 +75,9 @@ All notable changes to Flint are recorded here. The format follows
   its reason in `flint status`, without slowing Flint down; each has its
   own log. How to write one, with examples in Python and Rust:
   [docs/PROVIDERS.md](docs/PROVIDERS.md).
+
+### Fixed
+
+- The `Space` of `Alt+Space` is no longer typed into the query when Flint
+  appears, so a scope keyword typed straight after the hotkey (`b `)
+  scopes the query instead of searching for ` b `.
