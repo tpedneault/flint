@@ -20,6 +20,7 @@ flint-config = { path = "../flint-config" }
 global-hotkey = { workspace = true }
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
+    "Win32_Graphics_Dwm",
     "Win32_Security",
     "Win32_Security_Authorization",
     "Win32_Storage_FileSystem",

@@ -68,6 +68,8 @@ pub struct Settings {
     pub theme: String,
     /// `fenix.executable`; empty to look for it.
     pub fenix_executable: String,
+    /// `shell.program`; empty for the platform's default shell.
+    pub shell_program: String,
     /// `[[quicklinks]]`, in file order, keywords unique.
     pub quicklinks: Vec<Quicklink>,
     /// `[leader]`, or [`leader::defaults`] without one.
@@ -110,6 +112,7 @@ impl Default for Settings {
             escape_hides: false,
             theme: "fenix".to_owned(),
             fenix_executable: String::new(),
+            shell_program: String::new(),
             quicklinks: Vec::new(),
             leader: leader::defaults(),
             providers: Vec::new(),

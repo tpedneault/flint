@@ -75,6 +75,17 @@ All notable changes to Flint are recorded here. The format follows
   its reason in `flint status`, without slowing Flint down; each has its
   own log. How to write one, with examples in Python and Rust:
   [docs/PROVIDERS.md](docs/PROVIDERS.md).
+- The windows provider (Windows): `w ` lists the open windows, the one
+  you were in first; `Enter` switches to one, `Tab` `x` closes it. `SPC w`
+  in Normal mode. Linux says it can't list windows yet.
+- The calculator: a sum (`2 * 21`, `sqrt(2)/2`, `0xff + 1`) is answered
+  above everything else as you type, or with `= `; `Enter` copies it.
+- The shell prefix: `> ` runs what follows with your shell
+  (`shell.program`), in a terminal or hidden with how it ended in the
+  footer.
+- `flint autostart on|off`: start Flint, hidden, when you log in (the
+  `Run` key on Windows, an autostart entry on Linux); `flint autostart`
+  says whether it does.
 
 ### Fixed
 

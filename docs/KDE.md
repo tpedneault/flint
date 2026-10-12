@@ -10,7 +10,9 @@ Add an autostart entry that runs `flint`: **System Settings → Autostart →
 Add… → Add Application…**, and choose the `flint` binary. With no command,
 `flint` starts in the background and waits; it shows nothing until asked.
 
-(`flint autostart on` arrives in M6.)
+Or run `flint autostart on`, which writes that entry
+(`~/.config/autostart/flint.desktop`) for you; `flint autostart off`
+removes it.
 
 ## 2. Bind a shortcut to `flint toggle`
 

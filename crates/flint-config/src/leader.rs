@@ -48,6 +48,7 @@ pub fn defaults() -> Vec<LeaderBinding> {
         bind("a", "scope:apps"),
         bind("p", "scope:fenix.projects"),
         bind("f", "scope:fenix.recent"),
+        bind("w", "scope:windows"),
         bind("l", "scope:flint"),
         bind("r", "flint:reload"),
         bind("s", "flint:settings"),

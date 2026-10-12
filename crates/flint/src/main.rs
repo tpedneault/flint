@@ -1,7 +1,8 @@
 //! The `flint` executable: parses the command line and decides whether
 //! this process is the daemon (no daemon is running for this user) or a
 //! client that asks the running daemon to `toggle`, `show`, `hide`,
-//! `status`, `reload` or `quit`, then exits.
+//! `status`, `reload` or `quit`, then exits. `flint autostart` needs no
+//! daemon: it changes (or reports) this user's login entry itself.
 //!
 //! Deciding is "connect; if nobody answers, bind; if binding finds the
 //! endpoint taken, another daemon is starting this instant, so connect
@@ -29,9 +30,35 @@ mod timings;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
+use flint_platform::autostart::{self, State};
 use flint_platform::{console, BindError, Endpoint};
 
 use crate::cli::Command;
+
+/// `flint autostart [on|off]`.
+fn autostart(turn: Option<bool>) -> ExitCode {
+    let done = match turn {
+        Some(true) => std::env::current_exe()
+            .map_err(|e| format!("couldn't tell where this flint is: {e}"))
+            .and_then(|exe| autostart::enable(&exe)),
+        Some(false) => autostart::disable(),
+        None => Ok(()),
+    };
+    match done.and_then(|()| autostart::state()) {
+        Ok(State::On(command)) => {
+            println!("Autostart is on: {command} runs when you log in");
+            ExitCode::SUCCESS
+        }
+        Ok(State::Off) => {
+            println!("Autostart is off");
+            ExitCode::SUCCESS
+        }
+        Err(why) => {
+            eprintln!("flint: {why}");
+            ExitCode::FAILURE
+        }
+    }
+}
 
 fn main() -> ExitCode {
     let process_start = Instant::now();
@@ -54,6 +81,10 @@ fn main() -> ExitCode {
             console::attach_parent();
             println!("flint {}\n\n{}", env!("CARGO_PKG_VERSION"), cli::USAGE);
             return ExitCode::SUCCESS;
+        }
+        Command::Autostart(turn) => {
+            console::attach_parent();
+            return autostart(*turn);
         }
         command => command.request(),
     };

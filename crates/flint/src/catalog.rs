@@ -8,6 +8,11 @@
 //! (answers to the current query) are kept for that query only and ranked
 //! with the rest.
 //!
+//! Two built-in providers have no items to index: the calculator and the
+//! shell prefix compute one result from the query itself (M6). Those
+//! *instant* results are made here, on each search, and shown above
+//! everything else, since a sum or a command is exactly what was typed.
+//!
 //! It owns the scope keywords: the built-in providers' prefixes first, then
 //! external providers' (a clash with an earlier one is refused, with the
 //! reason), then each quicklink's keyword (likewise). And it keeps the
@@ -25,7 +30,7 @@ use flint_gui::{Chip, MenuAction, Row};
 use flint_index::{Candidate, Frecency, Hit, Index, Search};
 use flint_protocol::item::{Action, ActionKind};
 use flint_protocol::Item;
-use flint_providers::{apps, commands, quicklinks};
+use flint_providers::{apps, calculator, commands, quicklinks, shell, windows};
 
 /// How many results a search returns; the window scrolls through them.
 pub const LIMIT: usize = 100;
@@ -57,6 +62,16 @@ fn builtins() -> Vec<Provider> {
         builtin(apps::ID, apps::TITLE, Some(apps::PREFIX), 0.0),
         builtin(commands::ID, commands::TITLE, Some(commands::PREFIX), -5.0),
         builtin(quicklinks::ID, quicklinks::TITLE, None, 0.0),
+        builtin(
+            calculator::ID,
+            calculator::TITLE,
+            Some(calculator::PREFIX),
+            0.0,
+        ),
+        builtin(shell::ID, shell::TITLE, Some(shell::PREFIX), 0.0),
+        // Below apps of the same match, like Flint's commands: `w` alone
+        // shouldn't turn every window into a better match than the app.
+        builtin(windows::ID, windows::TITLE, Some(windows::PREFIX), -2.0),
         builtin(
             fenix::PROJECTS,
             fenix::PROJECTS_TITLE,
@@ -92,6 +107,10 @@ pub struct Shown {
     score: f64,
 }
 
+/// The built-in providers whose `provider` actions the daemon carries
+/// out itself, as it would send `execute` to a provider process.
+pub const DAEMON_ACTIONS: [&str; 3] = [commands::ID, shell::ID, windows::ID];
+
 /// Why this Flint can't carry out `action` of an item from `provider`
 /// (`external` when it is a provider process), if it can't: the action
 /// menu shows it disabled with that reason, and running it anyway (as
@@ -99,7 +118,7 @@ pub struct Shown {
 pub fn unavailable(provider: &str, external: bool, action: &Action) -> Option<String> {
     match &action.kind {
         ActionKind::Fenix { method, .. } => flint_fenix::handoff::available(method).err(),
-        ActionKind::Provider if provider != commands::ID && !external => Some(format!(
+        ActionKind::Provider if !DAEMON_ACTIONS.contains(&provider) && !external => Some(format!(
             "`{}` has no provider to carry it out",
             action.title
         )),
@@ -128,6 +147,8 @@ pub struct Catalog {
     shown: Vec<Shown>,
     /// The text the shown rows were found for, for frecency.
     shown_for: String,
+    /// The shell the shell prefix runs, named in its result.
+    shell: String,
 }
 
 impl Catalog {
@@ -146,6 +167,7 @@ impl Catalog {
             frecency,
             shown: Vec::new(),
             shown_for: String::new(),
+            shell: String::new(),
         };
         catalog.set_items(commands::ID, commands::items());
         catalog.rebuild_keywords();
@@ -360,6 +382,25 @@ impl Catalog {
         }
     }
 
+    /// The shell the shell prefix runs (resolved from `shell.program`).
+    pub fn set_shell(&mut self, shell: &str) {
+        self.shell = shell.to_owned();
+    }
+
+    /// The shell the shell prefix runs.
+    pub fn shell(&self) -> &str {
+        &self.shell
+    }
+
+    /// A provider's items, in no particular order.
+    pub fn items_of(&self, provider_id: &str) -> Vec<Item> {
+        self.items
+            .values()
+            .filter(|(_, p)| p == provider_id)
+            .map(|(item, _)| item.clone())
+            .collect()
+    }
+
     /// Searches `text` within `scope` (a keyword), remembering the results
     /// so a row can be acted on, and returns the rows.
     pub fn search(&mut self, scope: Option<&str>, text: &str, now: u64) -> Vec<Row> {
@@ -367,6 +408,7 @@ impl Catalog {
             .and_then(|k| self.keywords.iter().find(|(kw, ..)| kw == k))
             .map(|(_, _, s)| s.clone());
         self.shown_for = text.to_owned();
+        let instant = self.instant(scope.as_ref(), text);
         self.shown = match scope {
             Some(Scope::Quicklink(link)) => vec![Shown {
                 item: quicklinks::filled(&link, text),
@@ -377,7 +419,34 @@ impl Catalog {
             Some(Scope::Provider(id)) => self.hits(text, Some(&id), now),
             None => self.hits(text, None, now),
         };
+        if let Some(shown) = instant {
+            self.shown.retain(|s| s.item.id != shown.item.id);
+            self.shown.insert(0, shown);
+            self.shown.truncate(LIMIT);
+        }
         self.rows()
+    }
+
+    /// The calculator's or the shell's result for `text`, if it has one
+    /// here: the calculator unscoped (when `text` is arithmetic) or under
+    /// `=`, the shell only under `>`.
+    fn instant(&self, scope: Option<&Scope>, text: &str) -> Option<Shown> {
+        let (item, provider) = match scope {
+            None => (calculator::item(text, false)?, calculator::ID),
+            Some(Scope::Provider(id)) if id == calculator::ID => {
+                (calculator::item(text, true)?, calculator::ID)
+            }
+            Some(Scope::Provider(id)) if id == shell::ID => {
+                (shell::item(text, &self.shell)?, shell::ID)
+            }
+            Some(_) => return None,
+        };
+        Some(Shown {
+            item,
+            provider: provider.to_owned(),
+            highlights: vec![],
+            score: f64::INFINITY,
+        })
     }
 
     /// New results for the same query while its rows are on screen: the
@@ -811,6 +880,64 @@ mod tests {
             !titles(&c.search(None, "fire", 0)).contains(&"Firewall bug"),
             "a new query clears them"
         );
+    }
+
+    #[test]
+    fn a_sum_is_answered_first_and_a_word_is_left_alone() {
+        let mut c = catalog();
+        let rows = c.search(None, "2 * 21", 0);
+        assert_eq!(rows[0].title, "42");
+        assert_eq!(rows[0].badge, "Calculator");
+        let (chip, rest) = c.split_scope("= pi").unwrap();
+        assert_eq!(chip.label, "Calculator");
+        let rows = c.search(Some(&chip.keyword), rest, 0);
+        assert_eq!(titles(&rows), ["3.14159265359"]);
+        assert!(c
+            .search(None, "fire", 0)
+            .iter()
+            .all(|r| r.badge != "Calculator"));
+        assert!(
+            c.search(Some("="), "1 +", 0).is_empty(),
+            "nothing until it parses"
+        );
+    }
+
+    #[test]
+    fn the_shell_prefix_offers_the_command_and_nothing_unscoped() {
+        let mut c = catalog();
+        c.set_shell("/bin/bash");
+        let (chip, rest) = c.split_scope("> cargo build").unwrap();
+        let rows = c.search(Some(&chip.keyword), rest, 0);
+        assert_eq!(titles(&rows), ["cargo build"]);
+        assert_eq!(rows[0].subtitle, "run with bash");
+        let menu: Vec<_> = rows[0].actions.iter().map(|a| a.title.as_str()).collect();
+        assert_eq!(menu, ["Run in terminal", "Run hidden", "Copy command"]);
+        assert!(rows[0].actions.iter().all(|a| a.disabled.is_none()));
+        assert!(c.search(Some(">"), "  ", 0).is_empty());
+        assert!(c
+            .search(None, "cargo build", 0)
+            .iter()
+            .all(|r| r.badge != "Shell"));
+    }
+
+    #[test]
+    fn windows_are_items_whose_actions_the_daemon_runs() {
+        let mut c = catalog();
+        let list = [flint_providers::windows::Window {
+            handle: 7,
+            title: "main.rs - fenix".into(),
+            process: "fenix.exe".into(),
+        }];
+        let items = flint_providers::windows::items(&list)
+            .into_iter()
+            .map(|(i, _)| i)
+            .collect();
+        c.set_items(windows::ID, items);
+        let rows = c.search(Some("w"), "fenix", 0);
+        assert_eq!(titles(&rows), ["main.rs - fenix"]);
+        assert_eq!(rows[0].badge, "Windows");
+        assert!(rows[0].actions.iter().all(|a| a.disabled.is_none()));
+        assert_eq!(c.items_of(windows::ID).len(), 1);
     }
 
     #[test]

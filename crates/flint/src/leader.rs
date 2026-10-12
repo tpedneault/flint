@@ -116,6 +116,7 @@ mod tests {
                 "Apps",
                 "Projects",
                 "Recent files",
+                "Windows",
                 "Flint",
                 "Reload settings",
                 "Open settings"

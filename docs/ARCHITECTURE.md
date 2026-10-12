@@ -12,14 +12,15 @@ resident daemon, the budgets, ranking, the platform constraints) is in
 [DESIGN.md](DESIGN.md); the wire protocol is in [PROTOCOL.md](PROTOCOL.md);
 what comes from Fenix is in [FENIX-INTEGRATION.md](FENIX-INTEGRATION.md).
 
-Status: M5. The daemon, the control endpoint, the CLI and the hotkey
+Status: M6. The daemon, the control endpoint, the CLI and the hotkey
 (M1); searching apps, quicklinks and Flint's commands with Fenix's
 Insert/Normal modes, frecency and the stable merge (M2); Fenix level 0
 (M3): its projects and recent files, opening files in it, and following
 its theme; and the action menu, the which-key leader and footer messages
 (M4); and external providers over the protocol, spawned or connecting,
-isolated from Flint and from each other, with two examples (M5). Fenix's
-control protocol doesn't exist yet. The *Filled in* column says which milestone
+isolated from Flint and from each other, with two examples (M5); and the
+windows provider, the calculator, the shell prefix and autostart (M6).
+Fenix's control protocol doesn't exist yet. The *Filled in* column says which milestone
 gives each crate its first code, or its next.
 
 ## Crates
@@ -29,8 +30,8 @@ gives each crate its first code, or its next.
 | `flint-protocol` | Message types, handshake, error codes and size limits of [PROTOCOL.md](PROTOCOL.md); `Content-Length` framing compatible with `fenix-rpc`, with a bounded reader; the host-side handshake state machine and a blocking client. No threads, no sockets. | M1 (envelope, `hello`, client messages), M5 (provider messages) |
 | `flint-index` | Candidate store, scope keywords, matching with `nucleo-matcher` (fuzzy on titles, by substring on keywords and subtitles), frecency, the stable merge of streamed results. Pure; carries the 16 ms benchmark gate (`examples/bench.rs`). | M2 |
 | `flint-config` | `settings.toml`: the schema declared once, reading, per-setting validation; the hotkey `Chord`; Flint's folders and `FLINT_HOME`. | M1 |
-| `flint-platform` | Everything OS-specific: the control endpoint, the hotkey (behind the `Hotkey` trait), focus hand-off, the foreground window (sent to providers as context), opening and launching (`ShellExecuteExW`, detached spawns), the clipboard, the console, process facts; later reveal (M4), autostart and the window list (M6). | M1, M2, M4, M5, M6 |
-| `flint-providers` | Built-in providers as `Item`s: apps (Start Menu shortcuts; `.desktop` files, parsed per the spec), quicklinks, Flint's commands; then calculator, shell and windows. Discovery is file-system walking, tested on any OS. | M2, M6 |
+| `flint-platform` | Everything OS-specific: the control endpoint, the hotkey (behind the `Hotkey` trait), focus hand-off, the foreground window (sent to providers as context), opening and launching (`ShellExecuteExW`, detached spawns, hidden runs that report their exit status), revealing, the clipboard, the console, process facts, the window list (`EnumWindows`; switching and closing) and autostart (the `Run` key; an XDG autostart entry). | M1, M2, M4, M5, M6 |
+| `flint-providers` | Built-in providers as `Item`s: apps (Start Menu shortcuts; `.desktop` files, parsed per the spec), quicklinks, Flint's commands, the calculator (its own expression parser), the shell prefix (which shell, and the arguments that run one command) and windows (items from the platform's list). Discovery is file-system walking, tested on any OS. | M2, M6 |
 | `flint-fenix` | Everything Fenix: its state files (projects, recent files) and theme/font settings read defensively against fixtures, its projects and recent files as items, locating `fenix`, the level-0 hand-off (`fenix <file>`); the control-protocol client with capability detection in M7. | M3, M7 |
 | `flint-host` | The control server for CLI clients (M1); the provider host (M5): spawning providers and accepting connecting ones, query debounce and routing, `execute` timeouts, restart backoff and disabling, per-provider logs. Owns the threads that talk to peers; nothing in it blocks the caller. Also `flint-test-provider`, a misbehaving provider for its tests. | M1, M5 |
 | `flint-gui` | winit + wgpu + glyphon: the window, query line with scope chip and mode badge, list with highlights and provider badges, footer; Insert/Normal modes; the action menu; the leader over `fenix-keymap`'s trie with a which-key list; Fenix's eight palettes; GPU with fallback adapter. | M1–M4 |
