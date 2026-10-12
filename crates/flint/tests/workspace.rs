@@ -71,9 +71,10 @@ fn every_crate_is_a_member_and_documented_in_architecture() {
         .as_array()
         .expect("workspace.members is an array")
         .iter()
-        .map(|m| {
+        .filter_map(|m| {
             let m = m.as_str().expect("member is a string");
-            m.strip_prefix("crates/").unwrap_or(m).to_owned()
+            // Example providers live in `examples/`, outside the crate table.
+            m.strip_prefix("crates/").map(str::to_owned)
         })
         .collect();
     assert_eq!(members, dirs, "workspace members and crates/ differ");
@@ -225,5 +226,18 @@ fn fenix_crates_are_pinned_once_and_only_the_allowed_ones() {
                 "{name}: `{dep} = {{ workspace = true }}`"
             );
         }
+    }
+}
+
+/// docs/PROVIDERS.md promises examples short enough to read in one sitting
+/// and copy; this keeps the promise as they grow.
+#[test]
+fn the_example_providers_stay_under_150_lines() {
+    for example in [
+        "examples/provider-python/bookmarks.py",
+        "examples/provider-rust/src/main.rs",
+    ] {
+        let lines = read(&root().join(example)).lines().count();
+        assert!(lines < 150, "{example} is {lines} lines; keep it under 150");
     }
 }

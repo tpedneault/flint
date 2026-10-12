@@ -9,16 +9,18 @@ Fenix's grammar (Vim's Insert/Normal modes and a `SPC` leader with
 which-key) and Fenix's themes, and is built to run on a locked-down
 corporate machine: no admin rights, no installer, no cloud service.
 
-**Status:** M4. Flint runs in the background, comes up on its hotkey (or
+**Status:** M5. Flint runs in the background, comes up on its hotkey (or
 `flint toggle`), finds and launches apps, quicklinks, Fenix's projects
 and recent files and its own commands, with Fenix's Insert/Normal modes,
 an action menu on `Tab` and a which-key leader on `SPC`, and follows
-Fenix's theme.
+Fenix's theme. Other programs add their own items and actions as
+[providers](docs/PROVIDERS.md).
 
 - [Design](docs/DESIGN.md): the experience, architecture, milestones
 - [Architecture](docs/ARCHITECTURE.md): the crates, their rules, and how to check a change
 - [Configuration](docs/CONFIGURATION.md), [keybindings](docs/KEYBINDINGS.md), and [KDE Plasma setup](docs/KDE.md)
-- [Provider protocol](docs/PROTOCOL.md): how other tools add items and actions
+- [Writing a provider](docs/PROVIDERS.md), with examples in Python and Rust, and the
+  [provider protocol](docs/PROTOCOL.md) itself
 - [Flint and Fenix](docs/FENIX-INTEGRATION.md): the integration, and what Fenix needs to add
 
 ## Licence

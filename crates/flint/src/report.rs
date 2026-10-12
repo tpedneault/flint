@@ -108,7 +108,9 @@ fn duration(ms: u64) -> String {
 }
 
 /// The footer's standing notice: what is wrong, if anything, in one line.
-/// A hotkey failure comes first because it changes how Flint is reached.
+/// A hotkey failure comes first because it changes how Flint is reached;
+/// then settings problems, which are often why a provider is disabled;
+/// then a disabled provider, which otherwise would just be missing.
 pub fn notice(status: &Status) -> Option<FooterLine> {
     if status.hotkey.state == HotkeyState::Failed {
         return Some(FooterLine {
@@ -120,13 +122,23 @@ pub fn notice(status: &Status) -> Option<FooterLine> {
             error: true,
         });
     }
-    let first = status.settings_errors.first()?;
-    let more = match status.settings_errors.len() {
-        1 => String::new(),
-        n => format!(" (and {} more; `flint reload` lists them)", n - 1),
-    };
+    if let Some(first) = status.settings_errors.first() {
+        let more = match status.settings_errors.len() {
+            1 => String::new(),
+            n => format!(" (and {} more; `flint reload` lists them)", n - 1),
+        };
+        return Some(FooterLine {
+            text: format!("{first}{more}"),
+            error: true,
+        });
+    }
+    let disabled = status.providers.iter().find(|p| p.state == "disabled")?;
     Some(FooterLine {
-        text: format!("{first}{more}"),
+        text: format!(
+            "{} is disabled: {}",
+            disabled.name,
+            disabled.message.as_deref().unwrap_or("it kept stopping")
+        ),
         error: true,
     })
 }
@@ -224,6 +236,22 @@ mod tests {
             notice(&s).unwrap().text,
             "one (and 2 more; `flint reload` lists them)"
         );
+    }
+
+    #[test]
+    fn a_disabled_provider_is_the_notice_with_its_reason() {
+        let mut s = status();
+        s.providers = vec![flint_protocol::client::ProviderStatus {
+            name: "numbers".into(),
+            state: "disabled".into(),
+            message: Some("couldn't start numbers.exe: not found".into()),
+        }];
+        assert_eq!(
+            notice(&s).unwrap().text,
+            "numbers is disabled: couldn't start numbers.exe: not found"
+        );
+        s.providers[0].state = "restarting".into();
+        assert_eq!(notice(&s), None, "a restart is not yet a problem");
     }
 
     #[test]

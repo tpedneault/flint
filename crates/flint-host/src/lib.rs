@@ -1,9 +1,10 @@
 //! The host side of every channel Flint serves: the control server for CLI
-//! clients now ([`control`]), and from M5 the provider host — spawning
-//! declared providers and accepting the ones that connect, routing queries
-//! and `execute` requests, enforcing timeouts and the 2 s result deadline,
-//! and isolating crashes (restart with 1 s, 5 s, 30 s backoff; disabled
-//! after three crashes in a minute, with the reason shown).
+//! clients and connecting providers ([`control`]), and the provider host
+//! ([`providers`]) — spawning declared providers and serving the ones that
+//! connect, routing queries and `execute` requests, enforcing timeouts and
+//! the 2 s result deadline, and isolating crashes (restart with 1 s, 5 s,
+//! 30 s backoff; disabled after three crashes in a minute, with the reason
+//! shown).
 //!
 //! The threads that talk to peers live here, so the concurrency between
 //! Flint and its peers is reasoned about in one place. A peer may be slow,
@@ -18,5 +19,7 @@
 //! in-memory pipes.
 
 pub mod control;
+pub mod providers;
 
 pub use control::{serve, serve_connection, ClientHandler};
+pub use providers::{HostEvent, ProviderConfig, ProviderHost, State, Status, Timing};

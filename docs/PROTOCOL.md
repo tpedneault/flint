@@ -40,7 +40,7 @@ side may send requests; ids are per-direction.
 
 | Channel | Who starts it | Used by |
 |---|---|---|
-| stdio | Flint spawns the provider from `[[providers]] command`; Flint writes to its stdin and reads its stdout; stderr goes to Flint's log | most providers |
+| stdio | Flint spawns the provider from `[[providers]] command`; Flint writes to its stdin and reads its stdout; stderr goes to the provider's log, `logs/providers/<name>.log` | most providers |
 | control endpoint | the other process connects to Flint's per-user pipe/socket (see DESIGN.md, Security) | the `flint` CLI client; long-running apps acting as providers (`connect = true`) |
 
 ## Roles and handshake
@@ -167,10 +167,12 @@ Result:
 { "close": true, "message": "Clocked in on ABC-123" }
 ```
 
-`close: false` keeps Flint open (for actions that refine the list).
-`message` is shown in the footer. On failure, return a JSON-RPC error;
-its `message` is shown in the footer and Flint stays open. Timeout: 10 s,
-after which Flint shows "jira didn't answer" and stays open.
+`close` defaults to `true`; `close: false` keeps Flint open (for actions
+that refine the list). `message` is optional and shown in the footer. On
+failure, return a JSON-RPC error; its `message` is shown in the footer
+and Flint stays open. Timeout: 10 s, after which Flint shows "jira didn't
+answer" and stays open; if the provider stops first, "jira stopped before
+answering".
 
 ### `preview` (request, host → provider) — reserved
 
@@ -271,7 +273,7 @@ Params may be left out when every field is optional. A Status:
 | `coldStartMs` | process start to ready (window, GPU and endpoint up); budget 1.5 s |
 | `adapter` | `null` until the GPU is ready; `fallback` is the software adapter (WARP, llvmpipe) |
 | `hotkey.state` | `registered`; `failed` (the OS refused it, `message` says why); `unsupported` (no global hotkeys here, as on Wayland) |
-| `providers` | always empty before M5 |
+| `providers` | the built-in providers, then each `[[providers]]` entry with its `state` (`starting`, `running`, `waiting` to connect, `restarting`, `disabled`) and, when it isn't running, why in `message` |
 | `memoryBytes` | resident memory where the OS reports it; budget 120 MB |
 | `theme`, `font` | what the window is drawn with, and why (`following Fenix`, `set in settings.toml`) |
 | `timings` | only when asked for: the last 100 shows, request to first presented frame, oldest first; budget 50 ms at p95 |

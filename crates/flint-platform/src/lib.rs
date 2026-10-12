@@ -26,6 +26,7 @@ pub mod console;
 pub mod display;
 pub mod endpoint;
 pub mod focus;
+pub mod foreground;
 pub mod hotkey;
 pub mod launch;
 pub mod process;

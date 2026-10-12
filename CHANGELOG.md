@@ -68,3 +68,17 @@ All notable changes to Flint are recorded here. The format follows
   reload and settings.
 - "Show in folder" selects the file in Explorer, or in the file manager on
   Linux.
+- External providers: `[[providers]]` in `settings.toml` runs a program
+  that adds items and actions to Flint over the provider protocol, either
+  started by Flint (`command`) or connecting to it (`connect = true`). A
+  provider that crashes or misbehaves is restarted, then disabled with
+  its reason in `flint status`, without slowing Flint down; each has its
+  own log. How to write one, with examples in Python and Rust:
+  [docs/PROVIDERS.md](docs/PROVIDERS.md).
+
+### Fixed
+
+- The `Space` of `Alt+Space` is no longer typed into the query when Flint
+  appears (keys already held when the window takes focus are ignored), so
+  a scope keyword typed straight after the hotkey (`b `) scopes the query
+  instead of searching for ` b `.

@@ -12,14 +12,19 @@
 //! Nothing here knows about sockets or pipes: [`serve`] takes a function
 //! returning the next connection's two halves, so tests drive it over
 //! in-memory pipes and the daemon over `flint-platform`'s endpoint.
+//!
+//! A long-running program can connect as a provider instead of a client
+//! (`[[providers]] connect = true`): once its `hello` is accepted, the
+//! connection is handed to [`ClientHandler::provider`], which serves it as
+//! the provider host serves a spawned one.
 
-use std::io::{self, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use flint_protocol::frame::{read_frame, write_frame};
-use flint_protocol::{Action, ClientRequest, HostInfo, HostSession, Message, RpcError};
+use flint_protocol::{Action, ClientRequest, HostInfo, HostSession, Message, Role, RpcError};
 use serde_json::Value;
 
 /// How many connections may be open at once.
@@ -38,17 +43,27 @@ pub trait ClientHandler: Send + Sync + 'static {
 
     /// A line for the daemon's log: a connection that failed.
     fn log(&self, _line: &str) {}
+
+    /// Providers that may connect in (`connect = true`), asked per
+    /// connection so a reload applies to the next one.
+    fn declared(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Serves a provider whose `hello` was accepted, until it disconnects.
+    fn provider(
+        &self,
+        _session: HostSession,
+        _reader: Box<dyn BufRead + Send>,
+        _writer: Box<dyn Write + Send>,
+    ) {
+    }
 }
 
 /// Accepts connections from `accept` until it fails for good, serving
-/// each on its own thread. `declared` lists providers allowed to connect
-/// in (`connect = true`); empty until M5.
-pub fn serve<R, W, A>(
-    mut accept: A,
-    host: HostInfo,
-    declared: Vec<String>,
-    handler: Arc<dyn ClientHandler>,
-) where
+/// each on its own thread.
+pub fn serve<R, W, A>(mut accept: A, host: HostInfo, handler: Arc<dyn ClientHandler>)
+where
     R: Read + Send + 'static,
     W: Write + Send + 'static,
     A: FnMut() -> io::Result<(R, W)>,
@@ -77,7 +92,7 @@ pub fn serve<R, W, A>(
             handler.log("control endpoint: too many connections; one was refused");
             continue; // dropping the halves closes the connection
         }
-        let session = HostSession::new(host.clone(), declared.clone());
+        let session = HostSession::new(host.clone(), handler.declared());
         let worker = Arc::clone(&handler);
         let still_open = Arc::clone(&open);
         let spawned = std::thread::Builder::new()
@@ -99,7 +114,7 @@ pub fn serve<R, W, A>(
 
 /// Serves one connection until the peer closes it, the handshake fails,
 /// or the stream breaks.
-pub fn serve_connection<R: Read, W: Write>(
+pub fn serve_connection<R: Read + Send + 'static, W: Write + Send + 'static>(
     reader: R,
     mut writer: W,
     mut session: HostSession,
@@ -120,7 +135,15 @@ pub fn serve_connection<R: Read, W: Write>(
             }
         };
         match session.handle(&body) {
-            Action::Reply(message) => write_frame(&mut writer, &message.to_bytes())?,
+            Action::Reply(message) => {
+                write_frame(&mut writer, &message.to_bytes())?;
+                if session.peer().is_some_and(|p| p.role == Role::Provider) {
+                    // Its `hello` was just accepted: from here it is the
+                    // provider host's.
+                    handler.provider(session, Box::new(reader), Box::new(writer));
+                    return Ok(());
+                }
+            }
             Action::ReplyAndClose(message) => {
                 write_frame(&mut writer, &message.to_bytes())?;
                 return Ok(());
@@ -137,7 +160,10 @@ pub fn serve_connection<R: Read, W: Write>(
                     handler.replied(&request);
                 }
             }
-            Action::Nothing => {}
+            Action::Provider(_)
+            | Action::Response { .. }
+            | Action::Problem(_)
+            | Action::Nothing => {}
         }
     }
 }
@@ -295,7 +321,6 @@ mod tests {
             serve(
                 move || rx.recv().map_err(|_| io::Error::other("done")),
                 host(),
-                vec![],
                 h,
             )
         });

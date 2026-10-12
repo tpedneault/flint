@@ -72,6 +72,21 @@ pub struct Settings {
     pub quicklinks: Vec<Quicklink>,
     /// `[leader]`, or [`leader::defaults`] without one.
     pub leader: Vec<LeaderBinding>,
+    /// `[[providers]]`, names unique.
+    pub providers: Vec<ProviderConfig>,
+}
+
+/// One `[[providers]]` entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderConfig {
+    /// The provider's id; `provider/register` must use it.
+    pub name: String,
+    /// The program and its arguments; empty when it connects instead.
+    pub command: Vec<String>,
+    /// It connects to Flint's endpoint rather than being started.
+    pub connect: bool,
+    /// Overrides the provider's own scope keyword.
+    pub prefix: Option<String>,
 }
 
 /// One `[[quicklinks]]` entry.
@@ -97,6 +112,7 @@ impl Default for Settings {
             fenix_executable: String::new(),
             quicklinks: Vec::new(),
             leader: leader::defaults(),
+            providers: Vec::new(),
         }
     }
 }

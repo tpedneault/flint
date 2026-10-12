@@ -549,6 +549,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "flint-example-provider"
+version = "0.1.0"
+dependencies = [
+ "flint-host",
+ "flint-protocol",
+ "serde_json",
+]
+
+[[package]]
 name = "flint-fenix"
 version = "0.1.0"
 dependencies = [
@@ -577,6 +586,7 @@ dependencies = [
 name = "flint-host"
 version = "0.1.0"
 dependencies = [
+ "fenix-rpc",
  "flint-protocol",
  "serde_json",
 ]
