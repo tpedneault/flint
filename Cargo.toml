@@ -27,12 +27,13 @@ publish = false
 # revision the design was checked against (docs/DESIGN.md, "Dependencies on
 # Fenix crates"). Cargo resolves an entry here only once a member uses it,
 # so listing them before they are needed costs nothing and keeps the pin in
-# one place. Only these three until M8 adds `fenix-jira`/`fenix-gitlab`;
+# one place. Only these four until M8 adds `fenix-jira`/`fenix-gitlab`;
 # never `fenix-project`, `fenix-gui` or `fenix-picker`.
 [workspace.dependencies]
-fenix-keymap = { git = "https://github.com/tpedneault/fenix", rev = "f05780740b7d45e41eedc35b846dba7c832f4d49" }
-fenix-rpc = { git = "https://github.com/tpedneault/fenix", rev = "f05780740b7d45e41eedc35b846dba7c832f4d49" }
-fenix-storage = { git = "https://github.com/tpedneault/fenix", rev = "f05780740b7d45e41eedc35b846dba7c832f4d49" }
+fenix-control = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
+fenix-keymap = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
+fenix-rpc = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
+fenix-storage = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
 
 # Third-party crates used by more than one member, or pinned to Fenix's
 # versions on purpose: the rendering stack matches Fenix's exactly so fonts

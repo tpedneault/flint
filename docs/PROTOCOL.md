@@ -26,11 +26,13 @@ that size.
 
 `fenix-rpc::read_message` allocates whatever `Content-Length` says and
 reads header lines without a bound, which is fine for a language server
-Fenix chose to spawn but not for a socket other processes can reach. Until
-it gains a limit (F16 in FENIX-INTEGRATION.md), `flint-protocol` uses
-`fenix_rpc::write_message` and its own bounded reader with the same
-semantics (clean EOF between messages is `Ok(None)`, truncation is an
-error, unknown headers are ignored), tested against `fenix-rpc`'s.
+Fenix chose to spawn but not for a socket other processes can reach.
+`flint-protocol` uses `fenix_rpc::write_message` and its own bounded
+reader with the same semantics (clean EOF between messages is `Ok(None)`,
+truncation is an error, unknown headers are ignored), tested against
+`fenix-rpc`'s. `fenix-rpc` has had a bounded reader of its own,
+`read_message_limited`, since F16 landed with the pinned revision; moving
+to it is a cleanup for a later change.
 
 **Envelope.** JSON-RPC 2.0: requests (`id` + `method`), responses
 (`id` + `result` or `error`), notifications (`method`, no `id`). Either
@@ -135,8 +137,10 @@ re-indexes at most every 250 ms per provider.
 - `queryId` increases monotonically per host.
 - `scoped` is `true` when the user typed this provider's prefix; the text
   is then without the prefix.
-- `context.fenix` is present only when Fenix is the foreground window and
-  answered Flint's state request.
+- `context.fenix` is present only when Fenix was the foreground window
+  when Flint was summoned and has answered Flint's `fenix/state` request.
+  Flint asks as it shows and doesn't wait, so the first query after a show
+  may go out before Fenix has answered, without it.
 
 ### `results` (notification, provider → host)
 

@@ -6,8 +6,10 @@ it. The design is settled; M0 (workspace), M1 (daemon, endpoint, CLI,
 hotkey, window), M2 (search, modes, apps, quicklinks, frecency), M3
 (Fenix level 0: projects, recent files, theme), M4 (action menu,
 which-key leader, footer messages), M5 (external providers, two
-examples) and M6 (windows, calculator, shell prefix, autostart) are in
-place, and M7 (Fenix's control protocol) and M8 fill in the rest.
+examples), M6 (windows, calculator, shell prefix, autostart) and M7's
+first part (Fenix level 1 over Fenix's control channel: projects, files at
+a line, context) are in place. M7's commands, capture and agenda wait for
+Fenix's F5/F6; then M8.
 
 ## Read first, in this order
 
@@ -30,8 +32,8 @@ place, and M7 (Fenix's control protocol) and M8 fill in the rest.
   write Fenix's files at runtime (principle 2 of FENIX-INTEGRATION.md).
   Fenix work happens in its own repository and its own pull requests.
 - **Depend on Fenix crates by git and pinned `rev`** (DESIGN.md,
-  "Dependencies on Fenix crates"). Only `fenix-keymap`, `fenix-rpc`,
-  `fenix-storage` now; `fenix-jira`/`fenix-gitlab` in M8. Not
+  "Dependencies on Fenix crates"). Only `fenix-control`, `fenix-keymap`,
+  `fenix-rpc`, `fenix-storage` now; `fenix-jira`/`fenix-gitlab` in M8. Not
   `fenix-project`, not `fenix-gui`, not `fenix-picker`.
 - **Windows is the primary platform**, Linux (KDE Plasma 6, Wayland)
   second. CI runs both. Code that can't be tested in CI (hotkeys, focus,

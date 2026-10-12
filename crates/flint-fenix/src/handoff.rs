@@ -1,72 +1,80 @@
-//! Fenix level 0: carrying out `fenix` actions with what Fenix offers
-//! today, its single-instance hand-off. `fenix a b` passes the paths to
-//! the Fenix already running (which opens them and focuses its window) or
-//! starts one.
+//! Starting Fenix with a request, for when none is running to ask over
+//! the control channel ([`crate::control`]).
 //!
-//! - `fenix/open` → spawn `fenix <paths...>`.
-//! - `fenix/openProject` → refused with the reason: `fenix <folder>`
-//!   opens the folder as a file, not as a project, today.
-//! - anything else → refused: it needs Fenix's control protocol (F1).
+//! Fenix's command line says what its protocol says (Fenix's
+//! `docs/CONTROL.md`, "From the command line"):
 //!
-//! Focus on Windows: the `fenix` Flint starts exits once it has handed the
-//! paths over, and it is the Fenix already running that must come to the
-//! front, which Windows only allows a process the foreground grants. Flint
-//! is the foreground when `Enter` is pressed but doesn't know that Fenix's
-//! pid (F3), so it lifts the foreground lock for everyone until the next
-//! input, then starts `fenix`. M7 replaces this module with the control
-//! protocol, which reports the pid.
+//! - `fenix/open` → `fenix [--new-window] [--goto path:line[:col]]... [-- paths...]`:
+//!   a path with a position goes through `--goto`, which always reads one
+//!   (a file named `x.rs:12` exists nowhere in practice, but `--goto`
+//!   makes it certain); the others come after `--`, so a file whose name
+//!   starts with `-` is still a file.
+//! - `fenix/openProject` → `fenix --project <root>`.
+//! - anything else needs Fenix running: there is no flag for it.
+//!
+//! If a Fenix starts between Flint's look and this launch, the `fenix`
+//! started here hands the request to it over the channel, granting it
+//! the foreground itself (F3), and exits.
 
 use serde_json::Value;
 
 use crate::locate;
 
-/// Why `method` can't be carried out at level 0, or `Ok` when it can: the
-/// action menu shows the reason on a disabled entry, and [`execute`]
-/// refuses with the same words.
-pub fn available(method: &str) -> Result<(), String> {
+/// The arguments after the program that ask a new Fenix for `method`
+/// with `params`.
+pub fn arguments(method: &str, params: &Value) -> Result<Vec<String>, String> {
     match method {
-        "fenix/open" => Ok(()),
-        "fenix/openProject" => Err(
-            "opening a project in Fenix needs a newer Fenix (one that speaks Flint's control              protocol); Open folder works today"
-                .into(),
-        ),
+        "fenix/open" => {
+            let entries = params
+                .get("paths")
+                .and_then(Value::as_array)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let mut args = Vec::new();
+            if params.get("newWindow").and_then(Value::as_bool) == Some(true) {
+                args.push("--new-window".to_owned());
+            }
+            let mut plain = Vec::new();
+            for entry in entries {
+                let Some(path) = entry.get("path").and_then(Value::as_str) else {
+                    continue;
+                };
+                let line = entry.get("line").and_then(Value::as_u64);
+                let column = entry.get("column").and_then(Value::as_u64);
+                match (line, column) {
+                    (Some(l), Some(c)) => args.extend(["--goto".into(), format!("{path}:{l}:{c}")]),
+                    (Some(l), None) => args.extend(["--goto".into(), format!("{path}:{l}")]),
+                    _ => plain.push(path.to_owned()),
+                }
+            }
+            if args.iter().all(|a| a != "--goto") && plain.is_empty() {
+                return Err("nothing to open".into());
+            }
+            if !plain.is_empty() {
+                args.push("--".into());
+                args.extend(plain);
+            }
+            Ok(args)
+        }
+        "fenix/openProject" => match params.get("root").and_then(Value::as_str) {
+            Some(root) if !root.is_empty() => Ok(vec!["--project".into(), root.to_owned()]),
+            _ => Err("no project folder to open".into()),
+        },
         other => Err(format!(
-            "Fenix can't `{other}` from Flint yet; it needs Fenix's control protocol"
+            "`{other}` needs a running Fenix that offers it, and Fenix doesn't yet"
         )),
     }
 }
 
-/// Carries out the Fenix action `method` with `params`, starting `fenix`
-/// from `executable` (the `fenix.executable` setting, may be empty).
-pub fn execute(method: &str, params: &Value, executable: &str) -> Result<(), String> {
-    available(method)?;
-    let paths = paths(params)?;
+/// Starts `fenix` (from `executable`, the `fenix.executable` setting, may
+/// be empty) asking for `method` with `params`. The new process is
+/// granted the foreground as it starts (`flint_platform::launch::run`).
+pub fn start(method: &str, params: &Value, executable: &str) -> Result<(), String> {
+    let args = arguments(method, params)?;
     let fenix = locate::find(executable)?;
     let mut argv = vec![fenix.display().to_string()];
-    argv.extend(paths);
-    flint_platform::focus::allow_any_foreground();
+    argv.extend(args);
     flint_platform::launch::run(&argv, None, false)
-}
-
-/// `{ "paths": [{ "path": ... }] }` → the paths, refusing anything a
-/// command line would read as a flag (Fenix drops arguments starting with
-/// `-` except its own).
-fn paths(params: &Value) -> Result<Vec<String>, String> {
-    let paths: Vec<String> = params
-        .get("paths")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|p| p.get("path").and_then(Value::as_str))
-        .map(str::to_owned)
-        .collect();
-    if paths.is_empty() {
-        return Err("nothing to open".into());
-    }
-    if let Some(flag) = paths.iter().find(|p| p.starts_with('-')) {
-        return Err(format!("Fenix would read {flag} as an option, not a file"));
-    }
-    Ok(paths)
 }
 
 #[cfg(test)]
@@ -75,31 +83,52 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn open_needs_paths_that_cant_pass_for_flags() {
+    fn open_becomes_goto_for_positions_and_paths_after_the_separator() {
+        let params = json!({"paths": [
+            {"path": "C:\\src\\x.rs", "line": 12, "column": 3},
+            {"path": "notes.md"},
+            {"path": "-odd.txt"},
+            {"path": "/a/b.rs", "line": 7}
+        ]});
         assert_eq!(
-            paths(&json!({"paths": [{"path": "a.rs"}, {"path": "b.rs"}]})).unwrap(),
-            ["a.rs", "b.rs"]
+            arguments("fenix/open", &params).unwrap(),
+            [
+                "--goto",
+                "C:\\src\\x.rs:12:3",
+                "--goto",
+                "/a/b.rs:7",
+                "--",
+                "notes.md",
+                "-odd.txt"
+            ]
         );
-        assert_eq!(paths(&json!({})).unwrap_err(), "nothing to open");
-        assert!(paths(&json!({"paths": [{"path": "--new-window"}]}))
-            .unwrap_err()
-            .contains("option"));
+        assert_eq!(
+            arguments(
+                "fenix/open",
+                &json!({"paths": [{"path": "a"}], "newWindow": true})
+            )
+            .unwrap(),
+            ["--new-window", "--", "a"]
+        );
+        assert_eq!(
+            arguments("fenix/open", &json!({})).unwrap_err(),
+            "nothing to open"
+        );
     }
 
     #[test]
-    fn opening_a_project_says_why_not_yet() {
-        let err = execute("fenix/openProject", &json!({"root": "C:\\dev"}), "").unwrap_err();
-        assert!(
-            err.contains("newer Fenix") && err.contains("Open folder"),
-            "{err}"
+    fn a_project_is_a_flag_and_the_rest_needs_fenix_running() {
+        assert_eq!(
+            arguments("fenix/openProject", &json!({"root": "C:\\dev"})).unwrap(),
+            ["--project", "C:\\dev"]
         );
-        let err = execute("fenix/agenda.clockIn", &json!({}), "").unwrap_err();
-        assert!(err.contains("control protocol"), "{err}");
+        let err = arguments("fenix/agenda.clockIn", &json!({})).unwrap_err();
+        assert!(err.contains("running Fenix"), "{err}");
     }
 
     #[test]
     fn a_missing_fenix_is_reported_not_spawned() {
-        let err = execute(
+        let err = start(
             "fenix/open",
             &json!({"paths": [{"path": "a.rs"}]}),
             "/no/such/fenix",

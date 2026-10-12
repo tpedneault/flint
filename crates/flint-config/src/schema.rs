@@ -213,8 +213,9 @@ pub static SETTINGS: &[Setting] = &[
         key: "fenix.executable",
         kind: Kind::Text,
         default: "\"\"",
-        help: "The `fenix` program Flint opens files with. Empty: `fenix` on \
-               the `PATH`, else beside the `flint` program.",
+        help: "The `fenix` program Flint starts when no Fenix is running to \
+               ask (a running one is reached over its control channel). Empty: \
+               `fenix` on the `PATH`, else beside the `flint` program.",
         apply: |s, v| {
             s.fenix_executable = v.as_str().unwrap_or_default().trim().to_owned();
             Ok(vec![])

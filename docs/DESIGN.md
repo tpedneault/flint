@@ -9,8 +9,9 @@ This document is the design the first implementation follows. The wire
 protocol is in [PROTOCOL.md](PROTOCOL.md); what Flint needs from Fenix,
 and what Fenix has to add, is in [FENIX-INTEGRATION.md](FENIX-INTEGRATION.md).
 
-Status: M6 implemented (see [ARCHITECTURE.md](ARCHITECTURE.md)). Pinned against Fenix
-`f05780740b7d45e41eedc35b846dba7c832f4d49` (2026-10-11).
+Status: M7 implemented as far as Fenix allows (commands, capture and the
+agenda wait for F5/F6) (see [ARCHITECTURE.md](ARCHITECTURE.md)). Pinned against Fenix
+`899507281efcb3769cc7f941d1b1c00b8558b96e` (2026-10-12).
 
 ## Why the name
 
@@ -167,13 +168,15 @@ git dependencies pinned to a revision:
 
 ```toml
 [workspace.dependencies]
-fenix-keymap  = { git = "https://github.com/tpedneault/fenix", rev = "f05780740b7d45e41eedc35b846dba7c832f4d49" }
-fenix-rpc     = { git = "https://github.com/tpedneault/fenix", rev = "f05780740b7d45e41eedc35b846dba7c832f4d49" }
-fenix-storage = { git = "https://github.com/tpedneault/fenix", rev = "f05780740b7d45e41eedc35b846dba7c832f4d49" }
+fenix-control = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
+fenix-keymap  = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
+fenix-rpc     = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
+fenix-storage = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
 ```
 
 | Crate | Why | Weight |
 |---|---|---|
+| `fenix-control` | Fenix's control channel (M7): the per-user endpoint's name and connection, and the client for `fenix/hello`, `fenix/open`, `fenix/openProject`, `fenix/state`. Fenix's own implementation of its `docs/CONTROL.md`, so Flint can't name the endpoint differently from Fenix | `fenix-rpc`, `serde`, `serde_json`; `windows-sys`/`libc` |
 | `fenix-keymap` | The leader trie and `KeyPress` model, so key handling is identical to Fenix | no dependencies |
 | `fenix-rpc` | `Content-Length` framing, already proven against LSP/DAP (writer now; reader once it is bounded, F16) | no dependencies |
 | `fenix-storage` | Fenix's folder resolution (`FENIX_HOME` included), its keyed state files, atomic writes | `dirs`, `serde_json`, `tempfile`, `toml_edit` |

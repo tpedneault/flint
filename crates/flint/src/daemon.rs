@@ -42,7 +42,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use flint_config::{Chord, Folders, Loaded};
-use flint_fenix::{handoff, items as fenix, look, Look, Roots, Stamps};
+use flint_fenix::{items as fenix, look, Look, Roots, Stamps};
 use flint_gui::theme::{self, ORBIT_DARK};
 use flint_gui::{Controller, FooterLine, Gui, Proxy, ShowRequest, Shown, Ui};
 use flint_host::{ClientHandler, HostEvent, ProviderHost, State as ProviderState, Timing};
@@ -55,13 +55,14 @@ use flint_protocol::client::{
     ToggleResult,
 };
 use flint_protocol::item::{Action, ActionKind};
-use flint_protocol::provider::{Context, Execute, Foreground};
+use flint_protocol::provider::{Context, Execute, FenixContext, Foreground};
 use flint_protocol::{code, ClientRequest, HostInfo, Item, RpcError};
 use flint_providers::{apps, commands, quicklinks, shell, windows};
 use serde_json::{json, Value};
 
 use crate::catalog::Catalog;
 use crate::cli::Start;
+use crate::fenix_link::{self, Done, Job};
 use crate::leader::{self, LeaderAction};
 use crate::log::Log;
 use crate::report;
@@ -90,6 +91,8 @@ pub enum Event {
     Apps(Vec<Item>),
     /// A provider registered, sent items or results, answered, or changed.
     Provider(HostEvent),
+    /// The Fenix thread answered a look or a run.
+    Fenix(Done),
     /// A command run hidden from the shell prefix finished.
     Ran {
         /// The command, as typed.
@@ -170,6 +173,17 @@ pub fn run(
             proxy.send(Event::Provider(event));
         }),
     );
+    let fenix_events = Arc::clone(&proxy);
+    let fenix_jobs = match fenix_link::start(move |done| {
+        let proxy = fenix_events.lock().unwrap_or_else(|e| e.into_inner());
+        proxy.send(Event::Fenix(done));
+    }) {
+        Ok(jobs) => Some(jobs),
+        Err(why) => {
+            log.line(&format!("fenix: {why}"));
+            None
+        }
+    };
     let daemon = Daemon {
         proxy,
         providers: providers.clone(),
@@ -179,6 +193,10 @@ pub fn run(
         last_prefix: HashMap::new(),
         executing: HashMap::new(),
         context: Context::default(),
+        fenix_jobs,
+        fenix_looking: false,
+        fenix_running: HashMap::new(),
+        fenix_tokens: 0,
         window_handles: HashMap::new(),
         windows_unavailable: None,
         saver: Saver::start(frecency_path, Arc::clone(&log)),
@@ -248,6 +266,13 @@ struct Daemon {
     executing: HashMap<u64, String>,
     /// Where the current query was made.
     context: Context,
+    /// Requests for the Fenix thread; `None` if it couldn't start.
+    fenix_jobs: Option<mpsc::Sender<Job>>,
+    /// A look at Fenix is under way: don't queue another.
+    fenix_looking: bool,
+    /// Fenix actions under way: token → what was run, for messages.
+    fenix_running: HashMap<u64, String>,
+    fenix_tokens: u64,
     /// The open windows' handles, by item id, as listed at the last show.
     window_handles: HashMap<String, u64>,
     /// Why windows can't be listed here, if they can't.
@@ -330,13 +355,27 @@ impl Daemon {
                 built_in(commands::ID, self.catalog.count(commands::ID), None),
                 built_in(fenix::PROJECTS, self.catalog.count(fenix::PROJECTS), None),
                 built_in(fenix::RECENT, self.catalog.count(fenix::RECENT), None),
-                ProviderStatus {
-                    name: "fenix".into(),
-                    state: "level 0".into(),
-                    message: Some(match flint_fenix::locate::find(&self.fenix_executable()) {
-                        Ok(path) => format!("opens files with {}", path.display()),
-                        Err(why) => why,
-                    }),
+                match self.catalog.fenix() {
+                    Some(link) => ProviderStatus {
+                        name: "fenix".into(),
+                        state: "level 1".into(),
+                        message: Some(format!(
+                            "Fenix {} (pid {}) offers {}",
+                            link.version,
+                            link.pid,
+                            link.capabilities.join(", ")
+                        )),
+                    },
+                    None => ProviderStatus {
+                        name: "fenix".into(),
+                        state: "level 0".into(),
+                        message: Some(match flint_fenix::locate::find(&self.fenix_executable()) {
+                            Ok(path) => {
+                                format!("no Fenix answering; starts {} when asked", path.display())
+                            }
+                            Err(why) => why,
+                        }),
+                    },
                 },
             ]
             .into_iter()
@@ -617,6 +656,104 @@ impl Daemon {
             }),
             fenix: None,
         };
+        // What Fenix shows matters only when the user came from Fenix;
+        // whether one answers, and what it can do, matters every time.
+        let from_fenix = self.context.foreground.as_ref().is_some_and(|f| {
+            let name = f.process.to_ascii_lowercase();
+            name == "fenix.exe" || name == "fenix"
+        });
+        self.look_at_fenix(from_fenix);
+    }
+
+    /// Queues a look at Fenix, unless one is under way.
+    fn look_at_fenix(&mut self, state: bool) {
+        if self.fenix_looking {
+            return;
+        }
+        if let Some(jobs) = &self.fenix_jobs {
+            self.fenix_looking = jobs.send(Job::Look { state }).is_ok();
+        }
+    }
+
+    /// The Fenix thread answered.
+    fn fenix_done(&mut self, done: Done, ui: &mut Ui<'_>) {
+        match done {
+            Done::Looked {
+                link,
+                state,
+                problem,
+            } => {
+                self.fenix_looking = false;
+                if let Some(problem) = problem {
+                    self.log.line(&format!("fenix: {problem}"));
+                }
+                if let Some(state) = state.filter(|s| s.project.is_some() || s.file.is_some()) {
+                    self.context.fenix = Some(FenixContext {
+                        project: state.project,
+                        file: state.file,
+                    });
+                }
+                if self.catalog.fenix() != link.as_ref() {
+                    match &link {
+                        Some(l) => self.log.line(&format!(
+                            "fenix: level 1, Fenix {} (pid {}) offers {}",
+                            l.version,
+                            l.pid,
+                            l.capabilities.join(", ")
+                        )),
+                        None => self.log.line("fenix: level 0, no Fenix answering"),
+                    }
+                    self.catalog.set_fenix(link);
+                    // Fenix actions may have become available, or not.
+                    self.reshow(ui);
+                }
+            }
+            Done::Ran {
+                token,
+                result,
+                link,
+            } => {
+                if link.is_some() && self.catalog.fenix() != link.as_ref() {
+                    self.catalog.set_fenix(link);
+                }
+                let Some(what) = self.fenix_running.remove(&token) else {
+                    return;
+                };
+                match result {
+                    Ok(()) => ui.hide(),
+                    Err(why) => {
+                        self.log.line(&format!("fenix: {what}: {why}"));
+                        ui.set_message(FooterLine::error(why));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Hands a Fenix action to the Fenix thread; Flint stays open, saying
+    /// so, until it is done, then hides (or says why it failed).
+    fn fenix_action(
+        &mut self,
+        method: &str,
+        params: &serde_json::Value,
+        title: &str,
+        ui: &mut Ui<'_>,
+    ) -> Result<After, String> {
+        let Some(jobs) = &self.fenix_jobs else {
+            return Err("Flint couldn't start its line to Fenix; see the log".into());
+        };
+        self.fenix_tokens += 1;
+        let token = self.fenix_tokens;
+        jobs.send(Job::Run {
+            token,
+            method: method.to_owned(),
+            params: params.clone(),
+            executable: self.fenix_executable(),
+        })
+        .map_err(|_| "Flint's line to Fenix has stopped; see the log".to_owned())?;
+        self.fenix_running.insert(token, title.to_owned());
+        ui.set_message(FooterLine::info(format!("{title}…")));
+        Ok(After::Stay)
     }
 
     /// The shell the shell prefix runs, from `shell.program`.
@@ -930,7 +1067,9 @@ impl Daemon {
             return;
         };
         let external = self.catalog.is_external(&shown.provider);
-        if let Some(why) = crate::catalog::unavailable(&shown.provider, external, action) {
+        if let Some(why) =
+            crate::catalog::unavailable(&shown.provider, external, action, self.catalog.fenix())
+        {
             ui.set_message(FooterLine::error(why));
             return;
         }
@@ -974,7 +1113,7 @@ impl Daemon {
             }
             ActionKind::Reveal { target } => launch::reveal(target).map(|()| After::Hide),
             ActionKind::Fenix { method, params } => {
-                handoff::execute(method, params, &self.fenix_executable()).map(|()| After::Hide)
+                self.fenix_action(method, params, &action.title, ui)
             }
             ActionKind::Unknown => Err(format!(
                 "`{}` is a kind of action this Flint doesn't know",
@@ -1191,6 +1330,7 @@ impl Controller for Daemon {
             }
             Event::Apps(items) => self.apps_arrived(items, ui),
             Event::Provider(event) => self.provider_event(event, ui),
+            Event::Fenix(done) => self.fenix_done(done, ui),
             Event::Ran { command, exit } => self.ran(&command, &exit, ui),
             Event::Exit => {
                 self.log.line("quitting at a client's request");
@@ -1254,10 +1394,13 @@ impl Controller for Daemon {
                 self.finish(result, None, &format!("SPC flint:{id}"), ui);
             }
             LeaderAction::Fenix(command) => {
-                let why = handoff::available("fenix/runCommand")
-                    .err()
-                    .unwrap_or_else(|| format!("Fenix can't run `{command}` from Flint yet"));
-                ui.set_message(FooterLine::error(why));
+                let method = "fenix/runCommand";
+                let result = flint_fenix::control::available(method, self.catalog.fenix())
+                    .and_then(|()| {
+                        let params = serde_json::json!({ "id": command });
+                        self.fenix_action(method, &params, &format!("Fenix: {command}"), ui)
+                    });
+                self.finish(result, None, &format!("SPC fenix:{command}"), ui);
             }
         }
     }

@@ -3,8 +3,10 @@
 What Flint uses from Fenix, how it degrades when Fenix can't give it
 something, and the changes Fenix needs for the integration to be reliable.
 Every statement about Fenix here was checked against its source at
-`f05780740b7d45e41eedc35b846dba7c832f4d49` (2026-10-11); file references
-are relative to the Fenix repository.
+`f05780740b7d45e41eedc35b846dba7c832f4d49` (2026-10-11), and the control
+channel against `899507281efcb3769cc7f941d1b1c00b8558b96e` (2026-10-12,
+Fenix #58), the revision Flint now pins; file references are relative to
+the Fenix repository.
 
 ## Principles
 
@@ -25,7 +27,7 @@ are relative to the Fenix repository.
 
 | Thing | Where | Useful to Flint as is? |
 |---|---|---|
-| Single-instance hand-off: loopback TCP `127.0.0.1:47821`; a later `fenix a b` sends `a\nb\n`; the running instance opens them and focuses its window. `--new-window` is the only flag passed through; anything else starting with `-` is dropped. | `crates/fenix-gui/src/ipc.rs`, `main.rs` | Partly: Flint can open **files** today by spawning `fenix <path>`. Nothing else. |
+| Control channel (since #58): a per-user named pipe / Unix socket, JSON-RPC with `fenix/hello` (capabilities, pid), `fenix/open` (line, column), `fenix/openProject`, `fenix/state`; `fenix file:12:3`, `--goto`, `--project`. Replaces the loopback TCP hand-off on port 47821. | `crates/fenix-control`, `docs/CONTROL.md` | Yes: Flint's level 1 (M7), through `fenix-control` itself. |
 | Folder layout, `FENIX_HOME`, keyed JSON state files with atomic writes | `crates/fenix-storage/src/paths.rs`, `state.rs` | Yes, as a git dependency. |
 | Known projects: `state/projects.json`, key `known` (array of paths, most recent first); pins and groups under key `meta` (`{ "pinned": [path], "groups": { path: name } }`) | `crates/fenix-project/src/known.rs`, `meta.rs` | Yes, read-only. |
 | Recent files: `state/recent.json`, key `files` (array, most recent first, max 200); key `dirs` for the explorer's folders | `crates/fenix-project/src/recent.rs` | Yes, read-only. |
@@ -35,11 +37,14 @@ are relative to the Fenix repository.
 | Themes: eight palettes as `Theme` constants built from `glyphon` types | `crates/fenix-gui/src/theme.rs` (`ALL`, `by_name`) | No; Flint has to copy colours. |
 | Agenda: `data/agenda.json`, written whole by Fenix, read once at start, never re-read | `crates/fenix-agenda/src/persist.rs` | Read-only, and only as a snapshot. |
 | Notebook: plain files under `data/notebook` with an index | `crates/fenix-notebook` | Read-only. |
-| `Content-Length` framing | `crates/fenix-rpc` | Yes for writing; reading needs a bound (F16). |
+| `Content-Length` framing | `crates/fenix-rpc` | Yes; `read_message_limited` (F16) bounds reading. |
 
-## What Flint reads today (Fenix level 0, milestone M3)
+## What Flint uses today
 
-Implemented in M3 (`flint-fenix`). Without any Fenix change, Flint:
+### Level 0: Fenix's files (milestone M3)
+
+Implemented in M3 (`flint-fenix`), and still what Flint does with no
+Fenix running. Flint:
 
 - resolves Fenix's folders with `fenix_storage::paths::Roots::current()`
   (so a portable `FENIX_HOME` install works);
@@ -53,25 +58,45 @@ Implemented in M3 (`flint-fenix`). Without any Fenix change, Flint:
   `\\?\C:\...`;
 - treats a missing, empty or unreadable file as "no items", the same
   posture Fenix takes;
-- opens a file in Fenix by spawning `fenix <path>` (`fenix.executable`
-  when set, else `fenix` on `PATH`, else beside `flint`), which hands off
-  to the running instance through the existing mechanism or starts Fenix.
-  On Windows, Flint can't name the running Fenix's pid to grant it the
-  foreground (that needs F3), so it calls
-  `AllowSetForegroundWindow(ASFW_ANY)` just before spawning: any process
-  may take the foreground until the user's next input. Narrower than it
-  sounds (it lasts one hand-off) and replaced by the pid from
-  `fenix/hello` in M7;
-- does **not** offer "open project in Fenix": `fenix <directory>` is not a
-  project open today (`App::open_file_as` treats any path as a file).
-  Project items offer "open folder", "terminal here" and "copy path", and
-  show "open in Fenix needs a newer Fenix" disabled;
+- with no Fenix answering on the control channel, starts one with the
+  request as flags: `fenix --project <root>`, `fenix --goto
+  <path:line[:col]>`, or `fenix -- <paths>` (`fenix.executable` when set,
+  else `fenix` on `PATH`, else beside `flint`). The new process gets the
+  foreground from Flint as it starts. (Before M7, Flint spawned `fenix
+  <path>` for every open and lifted the foreground lock for everyone,
+  `ASFW_ANY`, because it couldn't name Fenix's pid; that is gone.)
 - follows `editor.theme` and `editor.font_family` from Fenix's
   `settings.toml`. Instead of a watcher thread, Flint checks the file's
   modification time before each show and re-reads it when it changed,
   which is when a difference could be seen; the state files are checked
   the same way after each show. Only those two keys are read: the file
   also holds Fenix's tokens, which Flint never reads (F12).
+
+### Level 1: the control channel (milestone M7)
+
+With a Fenix running, Flint talks to it over Fenix's control channel,
+using Fenix's own `fenix-control` crate (its endpoint naming in
+`flint-platform`, its client in `flint-fenix`), so the endpoint can't be
+named differently from Fenix. On a worker thread, never the event loop:
+
+- before each show, a *look*: `fenix/hello` says whether a Fenix answers,
+  its pid and its `capabilities`. Each Fenix action in the menu is enabled
+  by the method being listed there, never by version, and otherwise
+  dimmed with the reason. `flint status` reports "level 1" and the list;
+- when Fenix is the window Flint was summoned from, `fenix/state` too: the
+  project and file go to providers as `context.fenix` (PROTOCOL.md);
+- *Open in Fenix* on a project (now `Enter`) is `fenix/openProject`; on a
+  recent file, `fenix/open`; and a typed absolute path, optionally
+  `:line[:col]`, is a result that opens it there. Flint first grants
+  Fenix's pid the foreground (F3);
+- Fenix's answer settles it: Flint hides once Fenix has done it, or shows
+  Fenix's reason in the footer and stays.
+
+Not yet: Fenix commands with their keys (`fenix/commands`,
+`fenix/runCommand`), notebook capture and agenda clock in/out wait for F5,
+F6 and the rest of F1. `fenix:<command>` leader bindings and any provider
+action naming those methods are dimmed, saying the running Fenix doesn't
+offer them, and light up when it lists them.
 
 ## Changes Fenix needs
 
@@ -80,7 +105,9 @@ Flint milestone that waits on it.
 
 ### F1. A control protocol <a id="f1"></a>
 
-**Blocks M7.** The core change.
+**First half landed in Fenix #58** (`hello`, `open`, `openProject`,
+`state`); `commands`, `runCommand`, `notebook.capture` and the agenda
+methods remain, with F5 and F6.
 
 Today the hand-off carries a list of paths, one way, with no reply. Flint
 needs to ask Fenix things and to tell it more than "open these files".
@@ -121,7 +148,9 @@ hyperlink handler).
 
 ### F2. A per-user endpoint instead of a fixed TCP port <a id="f2"></a>
 
-**Blocks M7. Worth doing on its own: it is a cross-user leak today.**
+**Landed in Fenix #58**, with exactly the naming below, documented in
+Fenix's `docs/CONTROL.md` and implemented once in `fenix-control`, which
+Flint uses.
 
 `127.0.0.1:47821` is one port for the whole machine. On a shared machine
 (Windows Remote Desktop Services, a Citrix host, a shared Linux lab box,
@@ -140,7 +169,8 @@ endpoint, so a shared helper is a candidate for a small crate both use.
 
 ### F3. Focus hand-off on Windows <a id="f3"></a>
 
-**Blocks M7 (and probably affects Explorer double-clicks today).**
+**Landed in Fenix #58**: `fenix/hello` reports the pid, and Fenix's own
+client grants it before handing off.
 
 `apply_open_files` calls `window.focus_window()`. On Windows a
 background process may not take the foreground; the call usually just
@@ -157,8 +187,8 @@ second `fenix.exe` Explorer just started, or Flint) has to permit it with
 
 ### F4. Positions when opening <a id="f4"></a>
 
-**Blocks M7 for file:line items** (search results, compiler errors, notes
-that link to code).
+**Landed in Fenix #58** (`fenix/open` takes `line`/`column`;
+`fenix file:12:3`, `--goto`, sharing `fenix-tasks`' parser).
 
 Nothing in the open path accepts a line or column today
 (`open_file_from_picker`, `open_startup_file`). Add `line`/`column` to
@@ -170,7 +200,7 @@ writing a second one.
 
 ### F5. Commands that take arguments <a id="f5"></a>
 
-**Blocks M7 for capture and clock-in.**
+**Still needed: blocks capture and clock-in** (the rest of M7).
 
 `CommandFn` is `fn(&mut CommandCtx)` with no parameters, and commands
 like `notebook.capture` and `agenda.toggle_clock` open a prompt or act on
@@ -181,7 +211,7 @@ in F1 directly against `App`. The second is smaller; the first scales.
 
 ### F6. Command metadata for outside callers <a id="f6"></a>
 
-**Blocks M7 for the Fenix commands provider.**
+**Still needed: blocks the Fenix commands provider** (the rest of M7).
 
 The registry and the leader trie already hold everything needed: ids,
 descriptions, and the key sequence bound to each id. Expose them through
@@ -286,9 +316,8 @@ sessions). Retry with `force_fallback_adapter: true` before failing.
 
 ### F16. A bounded `fenix-rpc` reader <a id="f16"></a>
 
-**Not blocking; Flint carries its own bounded reader meanwhile. Needed by
-Fenix itself once F1 puts this framing on an endpoint other processes
-reach.**
+**Landed in Fenix #58** as `read_message_limited`. `flint-protocol` still
+uses its own bounded reader; switching is a cleanup.
 
 `read_message` allocates `vec![0u8; content_length]` from an unchecked
 header and reads header lines with an unbounded `read_line`. A peer can
@@ -300,10 +329,10 @@ anything that isn't a child process Fenix spawned.
 
 | # | Change | Blocks | Size |
 |---|---|---|---|
-| F1 | Control protocol (JSON-RPC on the single-instance channel) | M7 | medium |
-| F2 | Per-user named pipe / Unix socket | M7; security fix on its own | small |
-| F3 | Foreground hand-off on Windows | M7; check Explorer today | small |
-| F4 | `path:line:col` on open | M7 | small |
+| F1 | Control protocol (JSON-RPC on the single-instance channel) | first half landed (#58); the rest blocks M7's commands, capture, agenda | medium |
+| F2 | Per-user named pipe / Unix socket | landed (#58) | small |
+| F3 | Foreground hand-off on Windows | landed (#58) | small |
+| F4 | `path:line:col` on open | landed (#58) | small |
 | F5 | Commands with arguments | M7 (capture, clock-in) | small–medium |
 | F6 | Command metadata and `external` flag | M7 (commands provider) | small |
 | F7 | Light state crate; recent files in plain form | — | small |
@@ -315,9 +344,10 @@ anything that isn't a child process Fenix spawned.
 | F13 | Fenix pushes items to Flint | after M7 | medium |
 | F14 | App-agnostic folder roots | — | small |
 | F15 | GPU adapter fallback | — | small |
-| F16 | Bounded `fenix-rpc` reader | — (Fenix needs it with F1) | small |
+| F16 | Bounded `fenix-rpc` reader | landed (#58) | small |
 
-A sensible first Fenix pull request is **F2 + F16 + F1 (with `hello`,
-`open`, `openProject`, `state` only) + F3 + F4**: it fixes the shared-
-machine leak and unblocks most of M7. `commands`, `runCommand`, capture and
-agenda methods (F5, F6) can follow in a second.
+The first Fenix pull request, **F2 + F16 + F1 (`hello`, `open`,
+`openProject`, `state`) + F3 + F4**, landed as Fenix #58 and is what M7
+builds on. The second is **F5 + F6 + the rest of F1** (`commands`,
+`runCommand`, `notebook.capture`, `agenda.*`), ideally with F8's reload of
+`agenda.json`; Flint's side of those follows it.

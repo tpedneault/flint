@@ -11,6 +11,8 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+# The control protocol's client and types (M7); connecting is flint-platform's.
+fenix-control = { workspace = true }
 fenix-storage = { workspace = true }
 flint-platform = { path = "../flint-platform" }
 flint-protocol = { path = "../flint-protocol" }
