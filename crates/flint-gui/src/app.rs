@@ -579,7 +579,16 @@ impl State {
             // Alt+F4 and the like hide; only `flint quit` ends the daemon.
             WindowEvent::CloseRequested => self.hide(),
             WindowEvent::ModifiersChanged(mods) => self.modifiers = mods.state(),
-            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
+            // On gaining focus winit reports the keys already held as
+            // synthetic presses: after Alt+Space, the Space that summoned
+            // Flint, before even the Alt, so no modifier check catches it.
+            // They were pressed for another window; nothing here acts on
+            // them.
+            WindowEvent::KeyboardInput {
+                event,
+                is_synthetic: false,
+                ..
+            } if event.state == ElementState::Pressed => {
                 for press in keys::presses(&event.logical_key, self.modifiers) {
                     match self.launcher.press(press) {
                         Outcome::Nothing => {}

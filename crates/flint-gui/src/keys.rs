@@ -46,10 +46,8 @@ fn named_press(key: NamedKey, ctrl: bool, alt: bool) -> Option<Press> {
         NamedKey::ArrowUp => Press::Up,
         NamedKey::ArrowDown => Press::Down,
         NamedKey::Tab => Press::Tab,
-        // Alt+Space is the default hotkey: the press that shows Flint (or
-        // its key-repeat, while Alt is still held) reaches the window once
-        // it has focus, and would type a space ahead of the query, so `b `
-        // no longer scoped to `b`. A chord is never text.
+        // A chord is never text: Alt+Space (the default hotkey) held on
+        // into the window would otherwise type a space ahead of the query.
         NamedKey::Space if !ctrl && !alt => Press::Char(' '),
         _ => return None,
     })

@@ -79,5 +79,6 @@ All notable changes to Flint are recorded here. The format follows
 ### Fixed
 
 - The `Space` of `Alt+Space` is no longer typed into the query when Flint
-  appears, so a scope keyword typed straight after the hotkey (`b `)
-  scopes the query instead of searching for ` b `.
+  appears (keys already held when the window takes focus are ignored), so
+  a scope keyword typed straight after the hotkey (`b `) scopes the query
+  instead of searching for ` b `.
