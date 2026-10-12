@@ -15,8 +15,9 @@ use std::collections::HashMap;
 
 use flint_config::Quicklink;
 use flint_fenix::items as fenix;
-use flint_gui::{Chip, Row};
+use flint_gui::{Chip, MenuAction, Row};
 use flint_index::{Candidate, Frecency, Hit, Index, Search};
+use flint_protocol::item::{Action, ActionKind};
 use flint_protocol::Item;
 use flint_providers::{apps, commands, quicklinks};
 
@@ -97,7 +98,36 @@ impl Shown {
             subtitle: self.item.subtitle.clone().unwrap_or_default(),
             badge: provider(self.provider).map_or("", |p| p.title).to_owned(),
             highlights: self.highlights.clone(),
+            actions: self
+                .item
+                .actions
+                .iter()
+                .map(|a| MenuAction {
+                    title: a.title.clone(),
+                    key: a.key.as_deref().and_then(|k| k.chars().next()),
+                    disabled: unavailable(self.provider, a),
+                })
+                .collect(),
+            dimmed: false,
         }
+    }
+}
+
+/// Why this Flint can't carry out `action` of `provider`'s item, if it
+/// can't: the action menu shows it disabled with that reason, and running
+/// it anyway (as `Enter` might) gives the same reason.
+pub fn unavailable(provider: &str, action: &Action) -> Option<String> {
+    match &action.kind {
+        ActionKind::Fenix { method, .. } => flint_fenix::handoff::available(method).err(),
+        ActionKind::Provider if provider != commands::ID => Some(format!(
+            "`{}` needs its provider, which arrives in M5",
+            action.title
+        )),
+        ActionKind::Unknown => Some(format!(
+            "`{}` is a kind of action this Flint doesn't know",
+            action.title
+        )),
+        _ => None,
     }
 }
 
@@ -193,6 +223,22 @@ impl Catalog {
             ));
         }
         problems
+    }
+
+    /// The chip for a leader's `scope:` target: a provider's id (`apps`,
+    /// `fenix.recent`) or `quicklink.<keyword>`.
+    pub fn chip_for(&self, target: &str) -> Option<Chip> {
+        let wanted = match target.strip_prefix("quicklink.") {
+            Some(keyword) => keyword.to_owned(),
+            None => provider(target)?.prefix?.to_owned(),
+        };
+        self.keywords
+            .iter()
+            .find(|(k, ..)| *k == wanted)
+            .map(|(keyword, label, _)| Chip {
+                keyword: keyword.clone(),
+                label: label.clone(),
+            })
     }
 
     /// When `text` starts with a scope keyword and a space, the chip for
@@ -480,6 +526,44 @@ mod tests {
             ["main.rs", "Cargo.toml", "DESIGN.md"]
         );
         assert_eq!(c.search(None, "design", 0)[0].badge, "Recent files");
+    }
+
+    #[test]
+    fn rows_carry_their_menu_with_reasons_for_what_cant_run() {
+        let mut c = catalog();
+        let home = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../flint-fenix/tests/fixtures/fenix-home");
+        let (state, _) = flint_fenix::state::read(&flint_fenix::Roots::portable(&home));
+        c.set_ranked(fenix::PROJECTS, fenix::projects(&state));
+        let rows = c.search(Some("p"), "fenix", 0);
+        let menu: Vec<(&str, Option<char>, bool)> = rows[0]
+            .actions
+            .iter()
+            .map(|a| (a.title.as_str(), a.key, a.disabled.is_some()))
+            .collect();
+        assert_eq!(
+            menu,
+            [
+                ("Open folder", Some('o'), false),
+                ("Open in Fenix", Some('e'), true),
+                ("Terminal here", Some('t'), false),
+                ("Copy path", Some('c'), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn leader_scopes_name_providers_and_quicklinks() {
+        let c = catalog();
+        assert_eq!(c.chip_for("apps").unwrap().keyword, "a");
+        assert_eq!(c.chip_for("fenix.recent").unwrap().label, "Recent files");
+        assert_eq!(c.chip_for("quicklink.j").unwrap().label, "Jira issue");
+        assert!(c.chip_for("quicklink.nope").is_none());
+        assert!(c.chip_for("nope").is_none());
+        assert!(
+            c.chip_for("quicklink").is_none(),
+            "quicklinks as a whole have no keyword"
+        );
     }
 
     #[test]

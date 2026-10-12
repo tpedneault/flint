@@ -20,6 +20,7 @@ mod catalog;
 mod cli;
 mod client;
 mod daemon;
+mod leader;
 mod log;
 mod report;
 mod store;

@@ -116,7 +116,7 @@ fn action(id: &str, title: &str, kind: ActionKind) -> Action {
     Action {
         id: id.into(),
         title: title.into(),
-        key: None,
+        key: flint_protocol::item::conventional_key(id),
         kind,
     }
 }

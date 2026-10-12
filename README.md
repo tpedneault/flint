@@ -9,10 +9,11 @@ Fenix's grammar (Vim's Insert/Normal modes and a `SPC` leader with
 which-key) and Fenix's themes, and is built to run on a locked-down
 corporate machine: no admin rights, no installer, no cloud service.
 
-**Status:** M3. Flint runs in the background, comes up on its hotkey (or
+**Status:** M4. Flint runs in the background, comes up on its hotkey (or
 `flint toggle`), finds and launches apps, quicklinks, Fenix's projects
 and recent files and its own commands, with Fenix's Insert/Normal modes,
-and follows Fenix's theme.
+an action menu on `Tab` and a which-key leader on `SPC`, and follows
+Fenix's theme.
 
 - [Design](docs/DESIGN.md): the experience, architecture, milestones
 - [Architecture](docs/ARCHITECTURE.md): the crates, their rules, and how to check a change

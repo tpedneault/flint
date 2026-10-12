@@ -254,21 +254,29 @@ impl Renderer {
         }
         rect(&mut self.rects, caret, caret_color, width, height);
 
-        // Rows.
+        // Rows: the results, or the action menu or which-key in their place.
+        let view = launcher.view();
         let row_size = layout::ROW_FONT * scale;
-        let visible = launcher
-            .rows()
-            .len()
-            .saturating_sub(launcher.top())
-            .min(layout.rows);
+        let visible = view.rows.len().saturating_sub(view.top).min(layout.rows);
+        if view.overlay {
+            // A tint over the list area says "this isn't the results".
+            let first = px(layout.row(0));
+            let list = Rect {
+                h: px(layout.footer).y - first.y,
+                ..first
+            };
+            let mut tint = palette.surface;
+            tint[3] = 0.6;
+            rect(&mut self.rects, list, tint, width, height);
+        }
         while self.rows.len() < visible {
             self.rows.push((
                 buffer(fs, layout::ROW_FONT),
                 buffer(fs, layout::FOOTER_FONT),
             ));
         }
-        if visible > 0 {
-            let selected = launcher.selected().saturating_sub(launcher.top());
+        if let Some(selected) = view.selected.filter(|_| visible > 0) {
+            let selected = selected.saturating_sub(view.top);
             if selected < visible {
                 rect(
                     &mut self.rects,
@@ -280,10 +288,16 @@ impl Renderer {
             }
         }
         for i in 0..visible {
-            let row = &launcher.rows()[launcher.top() + i];
+            let row = &view.rows[view.top + i];
             let r = px(layout.row(i));
             let (title_buffer, badge_buffer) = &mut self.rows[i];
-            let badge_w = shape(badge_buffer, fs, small, &row.badge, palette.muted);
+            // In the menu the badge is the action's key, which is pressed.
+            let badge_color = if view.overlay {
+                palette.accent
+            } else {
+                palette.muted
+            };
+            let badge_w = shape(badge_buffer, fs, small, &row.badge, badge_color);
             let badge_left = width - pad - badge_w;
             areas_spec.push((
                 Which::Badge(i),
@@ -299,6 +313,8 @@ impl Renderer {
                         text,
                         colored(if hit {
                             palette.accent
+                        } else if row.dimmed {
+                            palette.muted
                         } else {
                             palette.foreground
                         }),
@@ -320,7 +336,8 @@ impl Renderer {
                 badge_left - gap,
             ));
         }
-        if launcher.rows().is_empty()
+        if !view.overlay
+            && view.rows.is_empty()
             && (!launcher.query().is_empty() || launcher.scope().is_some())
         {
             let r = px(layout.row(0));

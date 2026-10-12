@@ -12,12 +12,12 @@ resident daemon, the budgets, ranking, the platform constraints) is in
 [DESIGN.md](DESIGN.md); the wire protocol is in [PROTOCOL.md](PROTOCOL.md);
 what comes from Fenix is in [FENIX-INTEGRATION.md](FENIX-INTEGRATION.md).
 
-Status: M3. The daemon, the control endpoint, the CLI and the hotkey
+Status: M4. The daemon, the control endpoint, the CLI and the hotkey
 (M1); searching apps, quicklinks and Flint's commands with Fenix's
-Insert/Normal modes, frecency and the stable merge (M2); and Fenix level
-0 (M3): its projects and recent files, opening files in it, and following
-its theme. External providers, the action menu and Fenix's control
-protocol don't exist yet. The *Filled in* column says which milestone
+Insert/Normal modes, frecency and the stable merge (M2); Fenix level 0
+(M3): its projects and recent files, opening files in it, and following
+its theme; and the action menu, the which-key leader and footer messages
+(M4). External providers and Fenix's control protocol don't exist yet. The *Filled in* column says which milestone
 gives each crate its first code, or its next.
 
 ## Crates
@@ -31,8 +31,8 @@ gives each crate its first code, or its next.
 | `flint-providers` | Built-in providers as `Item`s: apps (Start Menu shortcuts; `.desktop` files, parsed per the spec), quicklinks, Flint's commands; then calculator, shell and windows. Discovery is file-system walking, tested on any OS. | M2, M6 |
 | `flint-fenix` | Everything Fenix: its state files (projects, recent files) and theme/font settings read defensively against fixtures, its projects and recent files as items, locating `fenix`, the level-0 hand-off (`fenix <file>`); the control-protocol client with capability detection in M7. | M3, M7 |
 | `flint-host` | The control server for CLI clients (M1); the provider host (spawning and accepting providers, routing, timeouts, crash isolation) in M5. Owns the threads that talk to peers. | M1, M5 |
-| `flint-gui` | winit + wgpu + glyphon: the window, query line with scope chip and mode badge, list with highlights and provider badges, footer; Insert/Normal modes; Fenix's eight palettes; GPU with fallback adapter; later the action menu and which-key popup. | M1, M2, M3, M4 |
-| `flint` | The executable: command line, daemon or client role, the daemon's controller, the catalog (items, scopes, results), action handling, frecency on disk, its log and timing log. | M1, M2 |
+| `flint-gui` | winit + wgpu + glyphon: the window, query line with scope chip and mode badge, list with highlights and provider badges, footer; Insert/Normal modes; the action menu; the leader over `fenix-keymap`'s trie with a which-key list; Fenix's eight palettes; GPU with fallback adapter. | M1–M4 |
+| `flint` | The executable: command line, daemon or client role, the daemon's controller, the catalog (items, scopes, results, each row's menu), action handling, resolving `[leader]`, frecency on disk, its log and timing log. | M1–M4 |
 
 Each crate's `lib.rs` (or `main.rs`) opens with a doc comment that is the
 longer version of its row here, including the tradeoffs it takes. Read
@@ -48,7 +48,7 @@ flint ──► every crate below
 
 flint ──► fenix-storage (frecency's state file)
 flint-fenix ─────► flint-protocol, flint-platform    (+ fenix-storage, serde_json, toml)
-flint-gui ───────► flint-config                      (+ winit, wgpu, glyphon)
+flint-gui ───────► flint-config                      (+ winit, wgpu, glyphon, fenix-keymap)
 flint-host ──────► flint-protocol
 flint-providers ─► flint-protocol, flint-config
 flint-platform ──► flint-config                      (+ windows-sys, global-hotkey, arboard, libc)
@@ -57,7 +57,7 @@ flint-protocol ──►                                   (+ fenix-rpc, serde_j
 flint-config ────►                                   (+ toml, dirs)
 ```
 
-Still to come: `flint-gui` → `fenix-keymap` (M4), `flint-host` →
+Still to come: `flint-host` →
 `flint-platform` for spawning providers (M5), `flint-fenix` → `fenix-rpc`
 for Fenix's control protocol (M7).
 

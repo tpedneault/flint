@@ -3,8 +3,8 @@
 //! in docs/CONFIGURATION.md all read this list, so they can't disagree.
 //!
 //! Only settings that do something are declared. Settings the design
-//! names for later milestones (`[leader]` in M4, `[[providers]]` in M5,
-//! ...) join the list with the
+//! names for later milestones (`[[providers]]` in M5, ...) join the list
+//! with the
 //! behaviour, so `settings.toml` never accepts a key that silently does
 //! nothing.
 //!
@@ -37,6 +37,8 @@ pub enum Kind {
     Choice(&'static [&'static str]),
     /// Any text; empty means "not set".
     Text,
+    /// A table of key sequences (`[leader]`).
+    Leader,
 }
 
 impl Kind {
@@ -54,6 +56,7 @@ impl Kind {
                 format!("one of {}", choices.join(", "))
             }
             Kind::Text => "text".into(),
+            Kind::Leader => "a table of key sequences and actions".into(),
         }
     }
 }
@@ -89,7 +92,9 @@ impl Setting {
     pub fn apply(&self, settings: &mut Settings, value: &Value) -> Result<Vec<String>, String> {
         match (self.kind, value) {
             (Kind::Bool, Value::Boolean(_)) | (Kind::Chord, Value::String(_)) => {}
-            (Kind::Records(_), Value::Array(_)) | (Kind::Text, Value::String(_)) => {}
+            (Kind::Records(_), Value::Array(_))
+            | (Kind::Text, Value::String(_))
+            | (Kind::Leader, Value::Table(_)) => {}
             (Kind::Choice(choices), Value::String(text)) => {
                 if !choices.iter().any(|c| c.eq_ignore_ascii_case(text)) {
                     return Err(format!("`{text}` isn't {}", self.kind.describe()));
@@ -217,6 +222,21 @@ pub static SETTINGS: &[Setting] = &[
         },
     },
     Setting {
+        key: "leader",
+        kind: Kind::Leader,
+        default: "see below",
+        help: "What `SPC` sequences do in Normal mode: `\"f r\" = \"scope:fenix.recent\"`. \
+               An action is `scope:<provider>`, `flint:<command>`, `fenix:<command>` or \
+               `query:<text>`; a table `{ action = ..., label = ... }` adds a label, and \
+               `{ label = ... }` names a group. Without the table, the defaults below apply; \
+               with it, the table is the whole map.",
+        apply: |s, v| {
+            let (bindings, problems) = crate::leader::parse(v)?;
+            s.leader = bindings;
+            Ok(problems)
+        },
+    },
+    Setting {
         key: "quicklinks",
         kind: Kind::Records(&["keyword", "name", "url"]),
         default: "[]",
@@ -309,6 +329,9 @@ mod tests {
     #[test]
     fn every_default_is_accepted_and_is_what_settings_default_to() {
         for s in SETTINGS {
+            if s.kind == Kind::Leader {
+                continue; // its default is a list in the docs, not a value
+            }
             let doc: toml::Table = format!("v = {}", s.default).parse().unwrap();
             let mut applied = Settings::default();
             s.apply(&mut applied, &doc["v"])
@@ -330,7 +353,7 @@ mod tests {
         assert_eq!(keys.len(), SETTINGS.len());
         assert!(SETTINGS
             .iter()
-            .filter(|s| !matches!(s.kind, Kind::Records(_)))
+            .filter(|s| !matches!(s.kind, Kind::Records(_) | Kind::Leader))
             .all(|s| s.key.split('.').count() == 2));
     }
 

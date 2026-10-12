@@ -9,7 +9,7 @@ This document is the design the first implementation follows. The wire
 protocol is in [PROTOCOL.md](PROTOCOL.md); what Flint needs from Fenix,
 and what Fenix has to add, is in [FENIX-INTEGRATION.md](FENIX-INTEGRATION.md).
 
-Status: M3 implemented (see [ARCHITECTURE.md](ARCHITECTURE.md)). Pinned against Fenix
+Status: M4 implemented (see [ARCHITECTURE.md](ARCHITECTURE.md)). Pinned against Fenix
 `f05780740b7d45e41eedc35b846dba7c832f4d49` (2026-10-11).
 
 ## Why the name
@@ -356,6 +356,14 @@ argument, never interpolated into a shell string.
 `fenix-keymap`'s labels are `&'static str`; leader labels from config are
 not. Until F10 lands, intern config labels with a small arena that lives as
 long as the daemon and is rebuilt (not grown) on reload.
+
+Decided in M4: a binding's action is `scope:<provider>`, `flint:<command>`,
+`fenix:<command>` or `query:<text>`, with an optional label (else one is
+derived from the action) and `{ label = ... }` for a group. Without a
+`[leader]` table a small default map applies (`a`, `p`, `f`, `l`, `r`,
+`s`); a table replaces it whole, so a default can be removed by leaving
+it out. Built-in actions share accelerator keys across providers (`o`
+open, `l` launch, `e` Fenix, `f` folder, `t` terminal, `c` copy).
 
 ## Platform notes
 

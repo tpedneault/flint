@@ -102,6 +102,23 @@ pub enum ActionKind {
     Unknown,
 }
 
+/// The accelerator Flint's built-in providers give an action, by its id,
+/// so the same key does the same thing on every item: `o` opens, `l`
+/// launches, `e` edits in Fenix, `f` shows in its folder, `t` opens a
+/// terminal, `c` copies. External providers choose their own keys.
+pub fn conventional_key(action_id: &str) -> Option<String> {
+    let key = match action_id {
+        "open" | "open-folder" => 'o',
+        "launch" => 'l',
+        "open-in-fenix" => 'e',
+        "reveal" => 'f',
+        "terminal" => 't',
+        "copy" | "copy-path" => 'c',
+        _ => return None,
+    };
+    Some(key.to_string())
+}
+
 impl Item {
     /// Checks the limits PROTOCOL.md sets. The error names the item.
     pub fn check(&self) -> Result<(), String> {
