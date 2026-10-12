@@ -52,6 +52,7 @@ use serde_json::{json, Value};
 
 use crate::catalog::Catalog;
 use crate::cli::Start;
+use crate::leader::{self, LeaderAction};
 use crate::log::Log;
 use crate::report;
 use crate::store::{self, Saver};
@@ -145,6 +146,8 @@ pub fn run(
         core: None,
         catalog,
         link_problems: Vec::new(),
+        leader_actions: Vec::new(),
+        leader_problems: Vec::new(),
         clipboard: Clipboard::new(),
         apps_scanned: None,
         scanning: false,
@@ -188,6 +191,10 @@ struct Daemon {
     catalog: Catalog,
     /// Quicklinks whose keyword a built-in provider has.
     link_problems: Vec<String>,
+    /// What each leader binding does, by the index the window was given.
+    leader_actions: Vec<LeaderAction>,
+    /// Leader bindings that name something that doesn't exist.
+    leader_problems: Vec<String>,
     clipboard: Clipboard,
     apps_scanned: Option<Instant>,
     scanning: bool,
@@ -218,6 +225,7 @@ impl Daemon {
         };
         let mut settings_errors = core.map(|c| c.loaded.errors.clone()).unwrap_or_default();
         settings_errors.extend(self.link_problems.iter().cloned());
+        settings_errors.extend(self.leader_problems.iter().cloned());
         Status {
             version: env!("CARGO_PKG_VERSION").into(),
             pid: std::process::id(),
@@ -343,6 +351,58 @@ impl Daemon {
         }
     }
 
+    /// Builds the leader from `[leader]`, resolved against what the
+    /// catalog has (so it runs after quicklinks are set).
+    fn build_leader(&mut self, ui: &mut Ui<'_>) {
+        let bindings = self
+            .core
+            .as_ref()
+            .map(|c| c.loaded.settings.leader.clone())
+            .unwrap_or_default();
+        let (entries, actions, problems) = leader::resolve(&bindings, &self.catalog);
+        for problem in &problems {
+            self.log.line(&format!("settings: {problem}"));
+        }
+        self.leader_actions = actions;
+        self.leader_problems = problems;
+        ui.set_leader(flint_gui::Leader::new(entries));
+    }
+
+    /// Does what the window should do after an action, or shows why it
+    /// failed. `picked` is the item to credit in frecency.
+    fn finish(
+        &mut self,
+        result: Result<After, String>,
+        picked: Option<&str>,
+        what: &str,
+        ui: &mut Ui<'_>,
+    ) {
+        match result {
+            Ok(after) => {
+                if let Some(id) = picked {
+                    self.catalog.record(id, now());
+                    self.saver.save(self.catalog.frecency());
+                }
+                match after {
+                    After::Hide => ui.hide(),
+                    After::Stay => {}
+                    After::Search => {
+                        ui.insert_mode();
+                        self.search(ui);
+                    }
+                    After::Exit => {
+                        self.log.line("quitting from the window");
+                        ui.exit();
+                    }
+                }
+            }
+            Err(why) => {
+                self.log.line(&format!("{what}: {why}"));
+                ui.set_message(FooterLine::error(why));
+            }
+        }
+    }
+
     /// Updates the footer's standing notice from the current status.
     fn refresh(&self, ui: &mut Ui<'_>) {
         let status = self.status(ui, false);
@@ -366,6 +426,8 @@ impl Daemon {
         }
         let mut errors = core.loaded.errors.clone();
         errors.extend(self.link_problems.iter().cloned());
+        self.build_leader(ui);
+        errors.extend(self.leader_problems.iter().cloned());
         self.follow_look(ui, true);
         self.refresh(ui);
         if ui.visible() {
@@ -474,6 +536,10 @@ impl Daemon {
         let Some(shown) = self.catalog.shown(row).cloned() else {
             return;
         };
+        if let Some(why) = crate::catalog::unavailable(shown.provider, action) {
+            ui.set_message(FooterLine::error(why));
+            return;
+        }
         let result = match &action.kind {
             ActionKind::Open { target } => launch::open(target).map(|()| After::Hide),
             ActionKind::Run {
@@ -494,9 +560,7 @@ impl Daemon {
                 "`{}` needs its provider, which arrives in M5",
                 action.title
             )),
-            ActionKind::Reveal { .. } => {
-                Err("showing in the file manager arrives with the action menu in M4".into())
-            }
+            ActionKind::Reveal { target } => launch::reveal(target).map(|()| After::Hide),
             ActionKind::Fenix { method, params } => {
                 handoff::execute(method, params, &self.fenix_executable()).map(|()| After::Hide)
             }
@@ -505,25 +569,7 @@ impl Daemon {
                 action.title
             )),
         };
-        match result {
-            Ok(after) => {
-                self.catalog.record(&shown.item.id, now());
-                self.saver.save(self.catalog.frecency());
-                match after {
-                    After::Hide => ui.hide(),
-                    After::Stay => {}
-                    After::Search => self.search(ui),
-                    After::Exit => {
-                        self.log.line("quitting from the window");
-                        ui.exit();
-                    }
-                }
-            }
-            Err(why) => {
-                self.log.line(&format!("{}: {why}", shown.item.title));
-                ui.set_message(FooterLine::error(why));
-            }
-        }
+        self.finish(result, Some(&shown.item.id), &shown.item.title, ui);
     }
 
     fn flint_command(&mut self, action_id: &str, ui: &mut Ui<'_>) -> Result<After, String> {
@@ -681,6 +727,7 @@ impl Controller for Daemon {
             self.log.line(&format!("settings: {problem}"));
         }
         self.core = Some(core);
+        self.build_leader(ui);
         if let Some(adapter) = ui.adapter() {
             self.log.line(&format!(
                 "GPU: {} ({}{})",
@@ -753,6 +800,47 @@ impl Controller for Daemon {
             return;
         };
         self.run_action(row, &action, ui);
+    }
+
+    fn run(&mut self, row: usize, action: usize, ui: &mut Ui<'_>) {
+        let Some(action) = self
+            .catalog
+            .shown(row)
+            .and_then(|s| s.item.actions.get(action).cloned())
+        else {
+            return;
+        };
+        self.run_action(row, &action, ui);
+    }
+
+    fn leader(&mut self, binding: usize, ui: &mut Ui<'_>) {
+        let Some(action) = self.leader_actions.get(binding).cloned() else {
+            return;
+        };
+        match action {
+            LeaderAction::Scope(chip) => {
+                ui.set_scope(Some(chip));
+                ui.set_query(String::new());
+                ui.insert_mode();
+                self.search(ui);
+            }
+            LeaderAction::Query(text) => {
+                ui.set_scope(None);
+                ui.set_query(text);
+                ui.insert_mode();
+                self.search(ui);
+            }
+            LeaderAction::Flint(id) => {
+                let result = self.flint_command(&id, ui);
+                self.finish(result, None, &format!("SPC flint:{id}"), ui);
+            }
+            LeaderAction::Fenix(command) => {
+                let why = handoff::available("fenix/runCommand")
+                    .err()
+                    .unwrap_or_else(|| format!("Fenix can't run `{command}` from Flint yet"));
+                ui.set_message(FooterLine::error(why));
+            }
+        }
     }
 
     fn copy(&mut self, row: usize, ui: &mut Ui<'_>) {

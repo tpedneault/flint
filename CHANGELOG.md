@@ -58,3 +58,13 @@ All notable changes to Flint are recorded here. The format follows
   picking up a change the next time it is shown; `appearance.theme` pins
   one instead.
 - `fenix.executable` for a Fenix that isn't on the `PATH`.
+- The action menu: `Tab` (or `.` in Normal mode) lists what the selected
+  result can do, each with its key (`o` open, `e` open in Fenix, `f` show
+  in folder, `t` terminal here, `c` copy). Actions Flint can't run yet are
+  dimmed and say why.
+- The leader: `SPC` in Normal mode opens a which-key list over the
+  `[leader]` map from `settings.toml` (Fenix's key trie, Fenix's grammar),
+  with defaults for apps, projects, recent files, Flint's commands,
+  reload and settings.
+- "Show in folder" selects the file in Explorer, or in the file manager on
+  Linux.

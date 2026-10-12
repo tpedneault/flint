@@ -85,6 +85,13 @@ pub trait Controller: 'static {
 
     /// `y` on row `row`: copy its primary text.
     fn copy(&mut self, row: usize, ui: &mut Ui<'_>);
+
+    /// The action menu chose action `action` of row `row`.
+    fn run(&mut self, row: usize, action: usize, ui: &mut Ui<'_>);
+
+    /// A leader sequence named the controller's binding `binding` (the
+    /// `target` it gave in [`Ui::set_leader`]).
+    fn leader(&mut self, binding: usize, ui: &mut Ui<'_>);
 }
 
 /// Sends the daemon's events into the event loop from any thread.
@@ -226,6 +233,17 @@ impl Ui<'_> {
     /// Replaces the query text.
     pub fn set_query(&mut self, query: String) {
         self.state.launcher.set_query(query);
+        self.state.redraw();
+    }
+
+    /// Uses `leader` for `SPC` in Normal mode.
+    pub fn set_leader(&mut self, leader: crate::leader::Leader) {
+        self.state.launcher.set_leader(std::sync::Arc::new(leader));
+    }
+
+    /// Goes to Insert mode (after a leader binding scoped the query, say).
+    pub fn insert_mode(&mut self) {
+        self.state.launcher.insert_mode();
         self.state.redraw();
     }
 
@@ -605,6 +623,8 @@ impl<C: Controller> App<C> {
                 Outcome::QueryChanged => self.controller.query_changed(&mut ui),
                 Outcome::Activate(row) => self.controller.activate(row, &mut ui),
                 Outcome::Copy(row) => self.controller.copy(row, &mut ui),
+                Outcome::Run { row, action } => self.controller.run(row, action, &mut ui),
+                Outcome::Leader(binding) => self.controller.leader(binding, &mut ui),
                 Outcome::Nothing | Outcome::Redraw | Outcome::Hide => {}
             }
         }

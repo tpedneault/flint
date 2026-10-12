@@ -232,7 +232,9 @@ for free.
 
 ### F10. Owned labels in `fenix-keymap` <a id="f10"></a>
 
-**Not blocking; Flint interns labels meanwhile.**
+**Not blocking; Flint interns labels meanwhile** (`flint-gui`'s
+`leader.rs`, since M4: the labels live in an arena owned beside the trie
+and replaced with it on reload).
 
 `KeyTrie::insert` and `label_group` take `&'static str` labels, and
 `Hint`/`Matcher::label` return them. Fenix's bindings are compiled in, so

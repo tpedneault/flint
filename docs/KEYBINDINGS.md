@@ -31,6 +31,7 @@ Normal mode.
 | `Down`, `Ctrl-n` | selects the next result |
 | `Up`, `Ctrl-p` | selects the previous result |
 | `Enter` | runs the selected result's first action |
+| `Tab` | opens the action menu |
 | `Esc` | Normal mode (or hides, with `behaviour.escape_hides = true`) |
 
 `AltGr` combinations type their character (`AltGr-q` is `@` on a German
@@ -49,8 +50,34 @@ layout), even though Windows reports them as `Ctrl+Alt`.
 | `y` | copies the selected result's text (its path, URL or title) |
 | `Esc`, `q` | hides Flint |
 
-`Tab` and `.` (the action menu) and `SPC` (the leader, with which-key)
-arrive in M4; until then they say so in the footer.
+| `Tab`, `.` | opens the action menu |
+| `SPC` | opens the leader |
+
+### The action menu
+
+`Tab` (in either mode) or `.` (in Normal mode) lists what the selected
+result can do. The first entry is what `Enter` does.
+
+| Key | Does |
+|---|---|
+| `j`, `k`, `Down`, `Up`, `Ctrl-n`, `Ctrl-p` | moves |
+| `Enter` | runs the selected action |
+| the action's key | runs that action |
+| `Esc`, `Tab` | closes the menu |
+
+Actions use the same keys everywhere: `o` opens, `l` launches, `e` opens
+in Fenix, `f` shows in its folder, `t` opens a terminal there, `c` copies.
+An action Flint can't run yet (opening a project in Fenix, which needs a
+newer Fenix) is dimmed, says why, and stays put if chosen.
+
+### The leader
+
+`SPC` in Normal mode lists the leader's keys and what each does. Press a
+key to run it, or to open its group (`f`, then `r`); `Backspace` goes
+back a key and `Esc` cancels. The keys are yours to set in `[leader]`
+([CONFIGURATION.md](CONFIGURATION.md#the-leader)); out of the box, `SPC p`
+lists Fenix projects, `SPC f` recent files, `SPC a` apps, `SPC l` Flint's
+commands, `SPC r` reloads settings and `SPC s` opens them.
 
 ## What `Enter` does
 

@@ -24,6 +24,7 @@
 //! Fenix's theme is `flint-fenix`'s job.
 
 pub mod chord;
+pub mod leader;
 pub mod paths;
 pub mod schema;
 
@@ -31,6 +32,7 @@ use std::path::Path;
 use std::time::SystemTime;
 
 pub use chord::{Chord, Key};
+pub use leader::LeaderBinding;
 pub use paths::Folders;
 
 /// `appearance.theme`'s choices: `fenix` (follow Fenix), then the eight
@@ -68,6 +70,8 @@ pub struct Settings {
     pub fenix_executable: String,
     /// `[[quicklinks]]`, in file order, keywords unique.
     pub quicklinks: Vec<Quicklink>,
+    /// `[leader]`, or [`leader::defaults`] without one.
+    pub leader: Vec<LeaderBinding>,
 }
 
 /// One `[[quicklinks]]` entry.
@@ -92,6 +96,7 @@ impl Default for Settings {
             theme: "fenix".to_owned(),
             fenix_executable: String::new(),
             quicklinks: Vec::new(),
+            leader: leader::defaults(),
         }
     }
 }
@@ -193,7 +198,10 @@ fn collect_leaves<'a>(
             format!("{prefix}.{key}")
         };
         match value {
-            toml::Value::Table(inner) => collect_leaves(inner, &path, out),
+            // A table that is itself a setting (`[leader]`) is one value.
+            toml::Value::Table(inner) if schema::find(&path).is_none() => {
+                collect_leaves(inner, &path, out)
+            }
             other => out.push((path, other)),
         }
     }
@@ -267,6 +275,19 @@ mod tests {
             .iter()
             .any(|e| e.contains("`appearance.widht`")));
         assert!(loaded.errors.iter().any(|e| e.contains("`leader`")));
+    }
+
+    #[test]
+    fn a_leader_table_replaces_the_defaults_and_reports_bad_entries() {
+        let loaded = parse("[leader]\n\"p\" = \"scope:fenix.projects\"\n\"x\" = \"nope\"\n");
+        assert_eq!(loaded.settings.leader.len(), 1);
+        assert_eq!(loaded.errors.len(), 1);
+        assert!(
+            loaded.errors[0].starts_with("`leader` \"x\": "),
+            "{:?}",
+            loaded.errors
+        );
+        assert_eq!(parse("").settings.leader, leader::defaults());
     }
 
     #[test]

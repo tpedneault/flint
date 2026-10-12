@@ -20,27 +20,32 @@ use serde_json::Value;
 
 use crate::locate;
 
-/// Carries out the Fenix action `method` with `params`, starting `fenix`
-/// from `executable` (the `fenix.executable` setting, may be empty).
-pub fn execute(method: &str, params: &Value, executable: &str) -> Result<(), String> {
+/// Why `method` can't be carried out at level 0, or `Ok` when it can: the
+/// action menu shows the reason on a disabled entry, and [`execute`]
+/// refuses with the same words.
+pub fn available(method: &str) -> Result<(), String> {
     match method {
-        "fenix/open" => {
-            let paths = paths(params)?;
-            let fenix = locate::find(executable)?;
-            let mut argv = vec![fenix.display().to_string()];
-            argv.extend(paths);
-            flint_platform::focus::allow_any_foreground();
-            flint_platform::launch::run(&argv, None, false)
-        }
+        "fenix/open" => Ok(()),
         "fenix/openProject" => Err(
-            "opening a project in Fenix needs a newer Fenix (one that speaks Flint's control \
-             protocol); Open folder works today"
+            "opening a project in Fenix needs a newer Fenix (one that speaks Flint's control              protocol); Open folder works today"
                 .into(),
         ),
         other => Err(format!(
             "Fenix can't `{other}` from Flint yet; it needs Fenix's control protocol"
         )),
     }
+}
+
+/// Carries out the Fenix action `method` with `params`, starting `fenix`
+/// from `executable` (the `fenix.executable` setting, may be empty).
+pub fn execute(method: &str, params: &Value, executable: &str) -> Result<(), String> {
+    available(method)?;
+    let paths = paths(params)?;
+    let fenix = locate::find(executable)?;
+    let mut argv = vec![fenix.display().to_string()];
+    argv.extend(paths);
+    flint_platform::focus::allow_any_foreground();
+    flint_platform::launch::run(&argv, None, false)
 }
 
 /// `{ "paths": [{ "path": ... }] }` → the paths, refusing anything a

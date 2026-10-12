@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 bytemuck = { workspace = true }
+fenix-keymap = { workspace = true }
 flint-config = { path = "../flint-config" }
 glyphon = { workspace = true }
 pollster = { workspace = true }

@@ -27,11 +27,13 @@ pub mod gpu;
 pub mod keys;
 pub mod launcher;
 pub mod layout;
+pub mod leader;
 mod rect;
 mod render;
 pub mod theme;
 
 pub use app::{Controller, Gui, Proxy, ShowRequest, Shown, Ui};
 pub use gpu::AdapterSummary;
-pub use launcher::{Chip, FooterLine, Mode, Row};
+pub use launcher::{Chip, FooterLine, MenuAction, Mode, Row};
+pub use leader::{Leader, LeaderEntry};
 pub use theme::Palette;

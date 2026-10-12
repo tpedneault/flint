@@ -68,6 +68,13 @@ pub fn items() -> Vec<Item> {
         .collect()
 }
 
+/// The command's title, as its item shows it.
+pub fn title(command: Command) -> &'static str {
+    ALL.iter()
+        .find(|(c, ..)| *c == command)
+        .map_or("", |&(_, _, title, _)| title)
+}
+
 /// The command an action id names.
 pub fn command(action_id: &str) -> Option<Command> {
     ALL.iter()

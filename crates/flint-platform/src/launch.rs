@@ -19,6 +19,12 @@
 //! so a Start Menu shortcut's arguments, working directory and "run as"
 //! settings are honoured. Linux opens through `xdg-open`.
 //!
+//! Revealing (showing a file selected in the file manager) is
+//! `explorer.exe /select,` on Windows, and on Linux the
+//! `org.freedesktop.FileManager1.ShowItems` D-Bus call that Dolphin,
+//! Nautilus and others answer, sent with `dbus-send`; without `dbus-send`
+//! the file's folder is opened instead.
+//!
 //! Errors come back as one line naming what couldn't be started and why.
 
 use std::process::{Command, Stdio};
@@ -34,6 +40,62 @@ pub fn open(target: &str) -> Result<(), String> {
         spawn(&["xdg-open".to_owned(), target.to_owned()], None)
             .map_err(|e| format!("couldn't open {target}: {e}"))
     }
+}
+
+/// Shows `path` selected in the file manager.
+pub fn reveal(path: &str) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        windows::reveal(path).map_err(|e| format!("couldn't show {path}: {e}"))
+    }
+    #[cfg(not(windows))]
+    {
+        let result = if on_path("dbus-send") {
+            spawn(&show_items(path), None)
+        } else {
+            let folder = std::path::Path::new(path)
+                .parent()
+                .map_or_else(|| path.to_owned(), |p| p.display().to_string());
+            spawn(&["xdg-open".to_owned(), folder], None)
+        };
+        result.map_err(|e| format!("couldn't show {path}: {e}"))
+    }
+}
+
+/// The `dbus-send` command asking the file manager to show `path`.
+#[cfg_attr(windows, allow(dead_code))]
+fn show_items(path: &str) -> Vec<String> {
+    [
+        "dbus-send",
+        "--session",
+        "--type=method_call",
+        "--dest=org.freedesktop.FileManager1",
+        "/org/freedesktop/FileManager1",
+        "org.freedesktop.FileManager1.ShowItems",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .chain([
+        format!("array:string:{}", file_uri(path)),
+        "string:".to_owned(),
+    ])
+    .collect()
+}
+
+/// `file://` and the path, percent-encoded except for `/` and the
+/// characters RFC 3986 leaves alone. A comma would end `dbus-send`'s
+/// array element, so it is encoded like everything else.
+#[cfg_attr(windows, allow(dead_code))]
+fn file_uri(path: &str) -> String {
+    let mut uri = String::from("file://");
+    for byte in path.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'-' | b'.' | b'_' | b'~') {
+            uri.push(byte as char);
+        } else {
+            uri.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    uri
 }
 
 /// Runs `argv` in `cwd`, in the user's terminal when `terminal`.
@@ -159,6 +221,17 @@ mod windows {
         Ok(())
     }
 
+    pub fn reveal(path: &str) -> std::io::Result<()> {
+        // `explorer /select,"path"` must reach Explorer exactly so: the
+        // standard argument quoting would wrap the whole of it in quotes,
+        // which Explorer doesn't understand. A running Explorer may do the
+        // showing, so any process is allowed the foreground once.
+        let mut command = std::process::Command::new("explorer.exe");
+        command.raw_arg(format!("/select,\"{path}\""));
+        crate::focus::allow_any_foreground();
+        command.spawn().map(|_| ())
+    }
+
     pub fn run(argv: &[String], cwd: Option<&str>, terminal: bool) -> std::io::Result<()> {
         let flags = if terminal {
             CREATE_NEW_CONSOLE
@@ -188,6 +261,15 @@ mod tests {
             ["konsole", "-e", "htop", "-d"]
         );
         std::env::remove_var("TERMINAL");
+    }
+
+    #[test]
+    fn show_items_sends_an_encoded_file_uri() {
+        let argv = show_items("/home/me/My Notes,v2.md");
+        assert_eq!(argv[0], "dbus-send");
+        assert_eq!(argv[6], "array:string:file:///home/me/My%20Notes%2Cv2.md");
+        assert_eq!(argv[7], "string:");
+        assert_eq!(file_uri("/a/é"), "file:///a/%C3%A9");
     }
 
     #[test]

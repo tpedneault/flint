@@ -62,6 +62,13 @@ escape_hides = false
 [fenix]
 executable = 'C:\tools\fenix\fenix.exe'
 
+[leader]
+"p"   = "scope:fenix.projects"
+"f r" = "scope:fenix.recent"
+"f"   = { label = "Fenix" }
+"j"   = "scope:quicklink.j"
+"r"   = "flint:reload"
+
 [[quicklinks]]
 keyword = "j"
 name = "Jira issue"
@@ -92,6 +99,7 @@ it is out of date.
 | `behaviour.hide_on_blur` | `true` or `false` | `true` | Hide Flint when it loses focus, as when you click another window. |
 | `behaviour.escape_hides` | `true` or `false` | `false` | Make `Esc` hide Flint from either mode, as Raycast does. By default `Esc` in Insert mode goes to Normal mode, where a second `Esc` (or `q`) hides. |
 | `fenix.executable` | text | `""` | The `fenix` program Flint opens files with. Empty: `fenix` on the `PATH`, else beside the `flint` program. |
+| `leader` | a table of key sequences and actions | `see below` | What `SPC` sequences do in Normal mode: `"f r" = "scope:fenix.recent"`. An action is `scope:<provider>`, `flint:<command>`, `fenix:<command>` or `query:<text>`; a table `{ action = ..., label = ... }` adds a label, and `{ label = ... }` names a group. Without the table, the defaults below apply; with it, the table is the whole map. |
 | `quicklinks` | entries with `keyword`, `name`, `url` | `[]` | Links with a keyword: typing the keyword and a space scopes the query to the link, and `Enter` opens `url` with `{query}` replaced by what you typed, percent-encoded. A link without `{query}` just opens. Written as `[[quicklinks]]` tables (see the example above). |
 
 ### Following Fenix
@@ -123,12 +131,47 @@ next fills `{query}` in the URL, percent-encoded (`j ABC-123` opens
 still found by its name, and choosing it puts its keyword in the query
 line for you. A URL without `{query}` simply opens.
 
-- `keyword` must be one word, unique among your links. `a`, `p`, `f` and
+- `keyword` must be one word, unique among your links (and is what a
+  leader binding names: `scope:quicklink.j`). `a`, `p`, `f` and
   `flint` belong to Flint's Apps, Fenix projects, Fenix recent files and
   Flint commands; a link that names one keeps
   working by name, and `flint status` says why its keyword doesn't.
 - `url` needs a scheme (`https:`, `mailto:`, …).
 - A bad entry is skipped with its reason; the others still work.
+
+### The leader
+
+`SPC` in Normal mode opens Flint's leader: a list of keys and what each
+does, the way Fenix's which-key menu works. `[leader]` maps key sequences
+(single characters separated by spaces, as the menu shows them: `f r`)
+to actions:
+
+| Action | Does |
+|---|---|
+| `scope:<provider>` | limits the query to `apps`, `flint`, `fenix.projects`, `fenix.recent` or `quicklink.<keyword>`, and goes to Insert mode |
+| `flint:<command>` | runs `reload`, `settings`, `log` or `quit` |
+| `fenix:<command>` | runs a Fenix command; needs a newer Fenix (it says so until then) |
+| `query:<text>` | replaces the query line with `text` |
+
+A table adds a label (`{ action = "flint:reload", label = "Reload" }`);
+without one, the menu says what the action does (the scope's name, the
+command's title). `{ label = "Fenix" }` names a group: the `f` that leads
+to `f r`. A key either runs something or starts a longer sequence, never
+both.
+
+Without a `[leader]` table these apply:
+
+| Keys | Does |
+|---|---|
+| `a` | Apps |
+| `p` | Fenix projects |
+| `f` | Fenix recent files |
+| `l` | Flint's commands |
+| `r` | Reload settings |
+| `s` | Open settings |
+
+With a table, the table is the whole map, so leaving a default out
+removes it.
 
 ### Key chords
 
@@ -153,7 +196,6 @@ gets it instead. If you rely on that menu, pick another chord.
 
 ## Settings that arrive later
 
-The design names more settings (`[leader]` in M4, `[[providers]]` in
-M5). Each joins this page with the
+The design names more settings (`[[providers]]` in M5). Each joins this page with the
 milestone that makes it do something; until then Flint reports it as
 unknown rather than silently accepting a key that does nothing.
