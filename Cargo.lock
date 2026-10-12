@@ -489,19 +489,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
+name = "fenix-control"
+version = "1.0.0"
+source = "git+https://github.com/tpedneault/fenix?rev=899507281efcb3769cc7f941d1b1c00b8558b96e#899507281efcb3769cc7f941d1b1c00b8558b96e"
+dependencies = [
+ "fenix-rpc",
+ "libc",
+ "serde",
+ "serde_json",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "fenix-keymap"
 version = "1.0.0"
-source = "git+https://github.com/tpedneault/fenix?rev=f05780740b7d45e41eedc35b846dba7c832f4d49#f05780740b7d45e41eedc35b846dba7c832f4d49"
+source = "git+https://github.com/tpedneault/fenix?rev=899507281efcb3769cc7f941d1b1c00b8558b96e#899507281efcb3769cc7f941d1b1c00b8558b96e"
 
 [[package]]
 name = "fenix-rpc"
 version = "1.0.0"
-source = "git+https://github.com/tpedneault/fenix?rev=f05780740b7d45e41eedc35b846dba7c832f4d49#f05780740b7d45e41eedc35b846dba7c832f4d49"
+source = "git+https://github.com/tpedneault/fenix?rev=899507281efcb3769cc7f941d1b1c00b8558b96e#899507281efcb3769cc7f941d1b1c00b8558b96e"
 
 [[package]]
 name = "fenix-storage"
 version = "1.0.0"
-source = "git+https://github.com/tpedneault/fenix?rev=f05780740b7d45e41eedc35b846dba7c832f4d49#f05780740b7d45e41eedc35b846dba7c832f4d49"
+source = "git+https://github.com/tpedneault/fenix?rev=899507281efcb3769cc7f941d1b1c00b8558b96e#899507281efcb3769cc7f941d1b1c00b8558b96e"
 dependencies = [
  "dirs",
  "serde",
@@ -561,6 +573,7 @@ dependencies = [
 name = "flint-fenix"
 version = "0.1.0"
 dependencies = [
+ "fenix-control",
  "fenix-storage",
  "flint-platform",
  "flint-protocol",
@@ -604,6 +617,7 @@ name = "flint-platform"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "fenix-control",
  "flint-config",
  "global-hotkey",
  "libc",

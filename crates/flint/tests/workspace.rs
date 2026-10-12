@@ -178,7 +178,12 @@ fn only_gui_and_platform_touch_the_os_or_window_system() {
 fn fenix_crates_are_pinned_once_and_only_the_allowed_ones() {
     // docs/DESIGN.md, "Dependencies on Fenix crates". `fenix-jira` and
     // `fenix-gitlab` join this list in M8.
-    const ALLOWED: [&str; 3] = ["fenix-keymap", "fenix-rpc", "fenix-storage"];
+    const ALLOWED: [&str; 4] = [
+        "fenix-control",
+        "fenix-keymap",
+        "fenix-rpc",
+        "fenix-storage",
+    ];
 
     let workspace = manifest(&root().join("Cargo.toml"));
     let pinned = workspace["workspace"]["dependencies"]

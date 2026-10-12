@@ -86,6 +86,14 @@ All notable changes to Flint are recorded here. The format follows
 - `flint autostart on|off`: start Flint, hidden, when you log in (the
   `Run` key on Windows, an autostart entry on Linux); `flint autostart`
   says whether it does.
+- Fenix level 1: with Fenix running, Flint asks it over Fenix's control
+  channel what it can do and enables each Fenix action accordingly (a
+  dimmed action says why). `Enter` on a project opens it in Fenix, as
+  `SPC p p` would; a typed path like `C:\src\main.rs:12:3` opens there;
+  Fenix comes to the front reliably. When Fenix is the window you came
+  from, providers get its project and file as context. With no Fenix
+  running, Flint starts one with the request (`--project`, `--goto`).
+  `flint status` says which level and what Fenix offers.
 
 ### Fixed
 

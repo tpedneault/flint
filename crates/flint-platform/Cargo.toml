@@ -15,6 +15,8 @@ workspace = true
 # use for; data-control is Wayland's clipboard protocol.
 arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
 flint-config = { path = "../flint-config" }
+# Fenix's control endpoint, named and opened as Fenix does it (fenix.rs).
+fenix-control = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 global-hotkey = { workspace = true }

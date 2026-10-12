@@ -3,7 +3,8 @@
 //! running programs (in a terminal, detached, or hidden with their exit
 //! status reported), the clipboard, the console, facts about this process
 //! and session, revealing paths (M4), the foreground window (M5), and
-//! autostart and the window list (M6).
+//! autostart and the window list (M6), and the connection to Fenix's
+//! control endpoint (M7).
 //!
 //! Where the daemon's logic depends on OS behaviour it reaches it through
 //! a trait ([`hotkey::Hotkey`]) so that logic is tested in CI with fakes,
@@ -27,6 +28,7 @@ pub mod clipboard;
 pub mod console;
 pub mod display;
 pub mod endpoint;
+pub mod fenix;
 pub mod focus;
 pub mod foreground;
 pub mod hotkey;

@@ -1,8 +1,9 @@
 //! Everything Flint knows about Fenix, in one place: reading Fenix's state
 //! files (known projects, recent files) and its theme and font settings,
 //! turning them into items, locating the `fenix` executable, and carrying
-//! out Fenix actions through the hand-off Fenix has today. From M7, the
-//! control-protocol client with capability detection.
+//! out Fenix actions: over Fenix's control channel with capability
+//! detection ([`control`], M7), or by starting Fenix with the request when
+//! none is running ([`handoff`]).
 //!
 //! The integration is specified in `docs/FENIX-INTEGRATION.md`. Two rules
 //! from it shape this crate. Flint never writes Fenix's files: it reads
@@ -18,9 +19,11 @@
 //! pull in Fenix's MIB and CCSDS crates to read two JSON keys; F7 would
 //! turn those keys into a contract.
 //!
-//! M3 is "level 0": everything here works with Fenix as it is at the
-//! pinned revision, and nothing needs a Fenix change.
+//! Level 0 (M3) is what works from Fenix's files alone: projects, recent
+//! files, theme. Level 1 (M7) is what the control channel adds: opening
+//! projects, files at a line, and what Fenix is showing, as context.
 
+pub mod control;
 pub mod handoff;
 pub mod items;
 pub mod locate;

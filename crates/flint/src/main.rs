@@ -21,6 +21,7 @@ mod catalog;
 mod cli;
 mod client;
 mod daemon;
+mod fenix_link;
 mod leader;
 mod log;
 mod report;

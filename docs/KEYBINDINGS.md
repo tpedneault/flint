@@ -67,8 +67,9 @@ result can do. The first entry is what `Enter` does.
 
 Actions use the same keys everywhere: `o` opens, `l` launches, `e` opens
 in Fenix, `f` shows in its folder, `t` opens a terminal there, `c` copies.
-An action Flint can't run yet (opening a project in Fenix, which needs a
-newer Fenix) is dimmed, says why, and stays put if chosen.
+An action Flint can't run here (one the running Fenix doesn't offer, a
+Fenix command before Fenix lists them) is dimmed, says why, and stays put
+if chosen.
 
 ### The leader
 
@@ -84,8 +85,9 @@ commands, `SPC r` reloads settings and `SPC s` opens them.
 | Result | `Enter` |
 |---|---|
 | an app | launches it, as the Start menu would (Windows) or as its `.desktop` file says (Linux) |
-| a Fenix project | opens its folder (opening it *in Fenix* needs a newer Fenix; it says so) |
-| a Fenix recent file | opens it in Fenix, handing it to the Fenix already running |
+| a Fenix project | opens it in Fenix, as `SPC p p` would (the folder, a terminal and the path are in the action menu) |
+| a typed file path (`C:\src\main.rs:12:3`) | opens it in Fenix at that line and column |
+| a Fenix recent file | opens it in Fenix, in the Fenix already running or a new one |
 | a quicklink taking a query | puts its keyword in the query line, so you can type what fills it |
 | a scoped quicklink (`j ABC-123`) | opens the filled-in link |
 | a sum (`2 * 21`, `= sqrt(2)`) | copies the result |

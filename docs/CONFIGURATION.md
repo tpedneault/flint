@@ -98,7 +98,7 @@ it is out of date.
 | `appearance.theme` | one of `"fenix"`, `"Orbit Dark"`, `"TempleOS"`, `"Gruvbox Dark"`, `"Nord"`, `"Dracula"`, `"Solarized Dark"`, `"One Dark"`, `"Visual Studio Dark"` | `"fenix"` | The colours. `fenix` follows Fenix's `editor.theme` (and `editor.font_family`), changing when Fenix's does; a theme's name pins it. Orbit Dark when Fenix isn't installed or names a theme Flint doesn't have. |
 | `behaviour.hide_on_blur` | `true` or `false` | `true` | Hide Flint when it loses focus, as when you click another window. |
 | `behaviour.escape_hides` | `true` or `false` | `false` | Make `Esc` hide Flint from either mode, as Raycast does. By default `Esc` in Insert mode goes to Normal mode, where a second `Esc` (or `q`) hides. |
-| `fenix.executable` | text | `""` | The `fenix` program Flint opens files with. Empty: `fenix` on the `PATH`, else beside the `flint` program. |
+| `fenix.executable` | text | `""` | The `fenix` program Flint starts when no Fenix is running to ask (a running one is reached over its control channel). Empty: `fenix` on the `PATH`, else beside the `flint` program. |
 | `shell.program` | text | `""` | The shell that runs what you type after `> ` (`pwsh`, `cmd`, `bash`, a full path). Empty: `pwsh` if it is on the `PATH`, else Windows PowerShell; on Linux, `$SHELL`, else `/bin/sh`. |
 | `leader` | a table of key sequences and actions | `see below` | What `SPC` sequences do in Normal mode: `"f r" = "scope:fenix.recent"`. An action is `scope:<provider>`, `flint:<command>`, `fenix:<command>` or `query:<text>`; a table `{ action = ..., label = ... }` adds a label, and `{ label = ... }` names a group. Without the table, the defaults below apply; with it, the table is the whole map. |
 | `providers` | entries with `name`, `command`, `connect`, `prefix` | `[]` | External providers (docs/PROVIDERS.md). `command` is the program and its arguments, as a list, started by Flint in the settings folder and talked to over its stdin and stdout; `connect = true` instead waits for a running program to connect to Flint itself. `prefix` overrides the provider's own scope keyword. Only providers named here ever run. |
@@ -118,11 +118,18 @@ Flint reads only those two keys from Fenix's settings, and never writes
 Fenix's files. Fenix's folders are found the way Fenix finds them,
 `FENIX_HOME` included.
 
-Opening a file in Fenix runs `fenix <file>`, which hands it to the Fenix
-already running. Flint looks for `fenix` on the `PATH`, then beside the
-`flint` program; if Fenix is installed somewhere else (a development
-build, a folder that isn't on the `PATH`), set `fenix.executable`.
-`flint status` says which `fenix` it found.
+Flint asks the Fenix that is running to open files and projects, over
+the private channel Fenix keeps for that (Fenix's `docs/CONTROL.md`), and
+learns there what Fenix can do; an action that Fenix doesn't offer is
+dimmed with the reason. With no Fenix running, Flint starts one with the
+request on its command line (`fenix --project <folder>`, `fenix --goto
+<file:line:col>`). For that it looks for `fenix` on the `PATH`, then
+beside the `flint` program; if Fenix is installed somewhere else (a
+development build, a folder that isn't on the `PATH`), set
+`fenix.executable`. `flint status` says which Fenix answers ("level 1")
+or which `fenix` it would start ("level 0"). A portable Fenix
+(`FENIX_HOME`) is reached only by a Flint started with the same
+`FENIX_HOME`.
 
 ### Quicklinks
 
@@ -192,7 +199,7 @@ to actions:
 |---|---|
 | `scope:<provider>` | limits the query to `apps`, `flint`, `fenix.projects`, `fenix.recent`, `windows`, `calculator`, `shell`, an external provider's name or `quicklink.<keyword>`, and goes to Insert mode |
 | `flint:<command>` | runs `reload`, `settings`, `log` or `quit` |
-| `fenix:<command>` | runs a Fenix command; needs a newer Fenix (it says so until then) |
+| `fenix:<command>` | runs a Fenix command, once Fenix offers its commands to other programs (it says so until then) |
 | `query:<text>` | replaces the query line with `text` |
 
 A table adds a label (`{ action = "flint:reload", label = "Reload" }`);

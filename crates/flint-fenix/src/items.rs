@@ -2,17 +2,19 @@
 //! gives Flint.
 //!
 //! - **Projects** (`p`): pinned ones first, then Fenix's order (most
-//!   recently used first), the group as part of the subtitle. `Enter` opens the folder. "Open in Fenix" is listed but
-//!   says it needs a newer Fenix: `fenix <folder>` opens a folder as a
-//!   file today, not as a project, so offering it would do the wrong thing
-//!   quietly (FENIX-INTEGRATION.md; F1 brings `fenix/openProject`).
+//!   recently used first), the group as part of the subtitle. `Enter`
+//!   opens the project in Fenix (`fenix/openProject`, as `SPC p p` would);
+//!   the folder, a terminal and the path are in the action menu.
 //! - **Recent files** (`f`): most recent first. `Enter` opens the file in
-//!   Fenix through its existing hand-off, `fenix <file>`.
+//!   Fenix (`fenix/open`).
+//! - **A typed path** (unscoped, absolute, naming a file that exists),
+//!   optionally with `:line[:column]` as compilers and grep print it:
+//!   one result that opens it in Fenix there. Windows' drive letter is
+//!   part of the path (`C:\x.rs:12:3`).
 //!
-//! The Fenix actions are `fenix` actions with the methods F1 will provide
-//! (`fenix/open`, `fenix/openProject`); until Fenix speaks that protocol
-//! the daemon carries them out with [`crate::handoff`], so items won't
-//! change when it does.
+//! These are `fenix` actions: the daemon carries them out over Fenix's
+//! control channel ([`crate::control`]), or by starting Fenix with them
+//! when none is running ([`crate::handoff`]).
 
 use std::path::Path;
 
@@ -34,6 +36,10 @@ pub const RECENT: &str = "fenix.recent";
 pub const RECENT_TITLE: &str = "Recent files";
 /// Its scope keyword.
 pub const RECENT_PREFIX: &str = "f";
+/// The provider of a typed path's result.
+pub const GOTO: &str = "fenix.goto";
+/// Its badge.
+pub const GOTO_TITLE: &str = "Fenix";
 
 /// How far a pinned project rises: above an unpinned one of the same match.
 pub const PINNED_BOOST: f64 = 15.0;
@@ -124,18 +130,18 @@ pub fn projects(state: &FenixState) -> Vec<(Item, f64)> {
                 keywords: project.group.iter().cloned().collect(),
                 actions: vec![
                     action(
-                        "open-folder",
-                        "Open folder",
-                        ActionKind::Open {
-                            target: root.clone(),
-                        },
-                    ),
-                    action(
                         "open-in-fenix",
                         "Open in Fenix",
                         ActionKind::Fenix {
                             method: "fenix/openProject".into(),
                             params: json!({ "root": root }),
+                        },
+                    ),
+                    action(
+                        "open-folder",
+                        "Open folder",
+                        ActionKind::Open {
+                            target: root.clone(),
                         },
                     ),
                     action("terminal", "Terminal here", terminal_here(&project.root)),
@@ -146,6 +152,91 @@ pub fn projects(state: &FenixState) -> Vec<(Item, f64)> {
             (item, pin + in_order(PROJECT_ORDER_BOOST, n, count))
         })
         .collect()
+}
+
+/// A path typed into the query line, and where in it, if `text` is an
+/// absolute path to a file (`is_file` says which exist) optionally
+/// followed by `:line` or `:line:column`.
+pub fn parse_goto(
+    text: &str,
+    is_file: impl Fn(&str) -> bool,
+) -> Option<(String, Option<u64>, Option<u64>)> {
+    let text = text.trim().trim_matches('"');
+    if !is_absolute(text) {
+        return None;
+    }
+    if is_file(text) {
+        return Some((text.to_owned(), None, None));
+    }
+    let number = |s: &str| {
+        (!s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| s.parse().ok())
+            .flatten()
+    };
+    let (rest, last) = text.rsplit_once(':')?;
+    let last = number(last)?;
+    if is_absolute(rest) && is_file(rest) {
+        return Some((rest.to_owned(), Some(last), None));
+    }
+    let (path, line) = rest.rsplit_once(':')?;
+    let line = number(line)?;
+    (is_absolute(path) && is_file(path)).then(|| (path.to_owned(), Some(line), Some(last)))
+}
+
+/// `C:\x`, `C:/x`, `\\server\share`, `/x`: a path that doesn't depend
+/// on a working directory (Flint's would mean nothing to the user).
+fn is_absolute(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    path.starts_with('/')
+        || path.starts_with("\\\\")
+        || (bytes.len() > 2
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && matches!(bytes[2], b'\\' | b'/'))
+}
+
+/// The result for a typed path, if `text` is one: `Enter` opens it in
+/// Fenix at the line and column given.
+pub fn goto(text: &str, is_file: impl Fn(&str) -> bool) -> Option<Item> {
+    let (path, line, column) = parse_goto(text, is_file)?;
+    let (name, folder) = split_display(Path::new(&path));
+    let at = match (line, column) {
+        (Some(l), Some(c)) => format!(":{l}:{c}"),
+        (Some(l), None) => format!(":{l}"),
+        _ => String::new(),
+    };
+    let mut target = json!({ "path": path });
+    if let Some(l) = line {
+        target["line"] = json!(l);
+    }
+    if let Some(c) = column {
+        target["column"] = json!(c);
+    }
+    Some(Item {
+        id: format!("{GOTO}:{path}"),
+        title: format!("{name}{at}"),
+        subtitle: folder,
+        icon: Some("file".into()),
+        keywords: vec![],
+        actions: vec![
+            action(
+                "open-in-fenix",
+                "Open in Fenix",
+                ActionKind::Fenix {
+                    method: "fenix/open".into(),
+                    params: json!({ "paths": [target] }),
+                },
+            ),
+            action(
+                "reveal",
+                "Show in folder",
+                ActionKind::Reveal {
+                    target: path.clone(),
+                },
+            ),
+            action("copy-path", "Copy path", ActionKind::Copy { text: path }),
+        ],
+    })
 }
 
 /// The recent-file items, each with its ranking boost.
@@ -199,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn projects_open_their_folder_and_pinned_ones_rise() {
+    fn projects_open_in_fenix_and_pinned_ones_rise() {
         let items = projects(&fixture_state());
         assert_eq!(items.len(), 4);
         let (fenix, boost) = &items[0];
@@ -211,10 +302,10 @@ mod tests {
             "Fenix's order: {boosts:?}"
         );
         assert!(
-            matches!(&fenix.actions[0].kind, ActionKind::Open { target } if target == r"C:\dev\fenix")
+            matches!(&fenix.actions[0].kind, ActionKind::Fenix { method, .. } if method == "fenix/openProject")
         );
         assert!(
-            matches!(&fenix.actions[1].kind, ActionKind::Fenix { method, .. } if method == "fenix/openProject")
+            matches!(&fenix.actions[1].kind, ActionKind::Open { target } if target == r"C:\dev\fenix")
         );
         let (ops, boost) = &items[2];
         assert_eq!(
@@ -242,6 +333,55 @@ mod tests {
             }
         );
         assert_eq!(main.primary_text(), r"C:\dev\fenix\src\main.rs");
+    }
+
+    #[test]
+    fn a_typed_path_opens_at_its_position() {
+        let files = [r"C:\src\x.rs", "/home/me/a.rs", r"C:\odd:12"];
+        let is_file = |p: &str| files.contains(&p);
+        let parse = |t: &str| parse_goto(t, is_file);
+        assert_eq!(
+            parse(r"C:\src\x.rs"),
+            Some((r"C:\src\x.rs".into(), None, None))
+        );
+        assert_eq!(
+            parse(r"  C:\src\x.rs:12:3 "),
+            Some((r"C:\src\x.rs".into(), Some(12), Some(3)))
+        );
+        assert_eq!(
+            parse("/home/me/a.rs:40"),
+            Some(("/home/me/a.rs".into(), Some(40), None))
+        );
+        assert_eq!(
+            parse(r#""C:\src\x.rs:7""#),
+            Some((r"C:\src\x.rs".into(), Some(7), None)),
+            "quoted, as copied from a terminal"
+        );
+        assert_eq!(
+            parse(r"C:\odd:12"),
+            Some((r"C:\odd:12".into(), None, None)),
+            "a file of that name wins"
+        );
+        assert_eq!(
+            parse("a.rs:12"),
+            None,
+            "relative paths mean nothing to Flint"
+        );
+        assert_eq!(parse(r"C:\src\missing.rs:1"), None);
+        assert_eq!(parse(r"C:\src\x.rs:abc"), None);
+        assert_eq!(parse("C:"), None);
+
+        let item = goto(r"C:\src\x.rs:12:3", is_file).unwrap();
+        assert!(item.check().is_ok());
+        assert_eq!(item.title, "x.rs:12:3");
+        assert_eq!(item.subtitle.as_deref(), Some(r"C:\src"));
+        assert_eq!(
+            item.actions[0].kind,
+            ActionKind::Fenix {
+                method: "fenix/open".into(),
+                params: json!({ "paths": [{ "path": r"C:\src\x.rs", "line": 12, "column": 3 }] }),
+            }
+        );
     }
 
     #[test]

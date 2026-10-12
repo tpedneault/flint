@@ -25,6 +25,7 @@
 use std::collections::HashMap;
 
 use flint_config::Quicklink;
+use flint_fenix::control::Link;
 use flint_fenix::items as fenix;
 use flint_gui::{Chip, MenuAction, Row};
 use flint_index::{Candidate, Frecency, Hit, Index, Search};
@@ -84,6 +85,7 @@ fn builtins() -> Vec<Provider> {
             Some(fenix::RECENT_PREFIX),
             0.0,
         ),
+        builtin(fenix::GOTO, fenix::GOTO_TITLE, None, 0.0),
     ]
 }
 
@@ -114,10 +116,16 @@ pub const DAEMON_ACTIONS: [&str; 3] = [commands::ID, shell::ID, windows::ID];
 /// Why this Flint can't carry out `action` of an item from `provider`
 /// (`external` when it is a provider process), if it can't: the action
 /// menu shows it disabled with that reason, and running it anyway (as
-/// `Enter` might) gives the same reason.
-pub fn unavailable(provider: &str, external: bool, action: &Action) -> Option<String> {
+/// `Enter` might) gives the same reason. `fenix` is what the running
+/// Fenix said it can do at the last look (`None`: none answered).
+pub fn unavailable(
+    provider: &str,
+    external: bool,
+    action: &Action,
+    fenix: Option<&Link>,
+) -> Option<String> {
     match &action.kind {
-        ActionKind::Fenix { method, .. } => flint_fenix::handoff::available(method).err(),
+        ActionKind::Fenix { method, .. } => flint_fenix::control::available(method, fenix).err(),
         ActionKind::Provider if !DAEMON_ACTIONS.contains(&provider) && !external => Some(format!(
             "`{}` has no provider to carry it out",
             action.title
@@ -149,6 +157,11 @@ pub struct Catalog {
     shown_for: String,
     /// The shell the shell prefix runs, named in its result.
     shell: String,
+    /// What the running Fenix can do, at the last look.
+    fenix: Option<Link>,
+    /// Whether a path names a file, for a typed path's result; a field so
+    /// tests needn't touch the disk.
+    is_file: fn(&str) -> bool,
 }
 
 impl Catalog {
@@ -168,6 +181,8 @@ impl Catalog {
             shown: Vec::new(),
             shown_for: String::new(),
             shell: String::new(),
+            fenix: None,
+            is_file: |path| std::path::Path::new(path).is_file(),
         };
         catalog.set_items(commands::ID, commands::items());
         catalog.rebuild_keywords();
@@ -387,6 +402,17 @@ impl Catalog {
         self.shell = shell.to_owned();
     }
 
+    /// What the running Fenix can do (`None`: none answered), so Fenix
+    /// actions are offered or disabled with the reason.
+    pub fn set_fenix(&mut self, link: Option<Link>) {
+        self.fenix = link;
+    }
+
+    /// What the running Fenix can do, at the last look.
+    pub fn fenix(&self) -> Option<&Link> {
+        self.fenix.as_ref()
+    }
+
     /// The shell the shell prefix runs.
     pub fn shell(&self) -> &str {
         &self.shell
@@ -432,7 +458,10 @@ impl Catalog {
     /// `=`, the shell only under `>`.
     fn instant(&self, scope: Option<&Scope>, text: &str) -> Option<Shown> {
         let (item, provider) = match scope {
-            None => (calculator::item(text, false)?, calculator::ID),
+            None => match calculator::item(text, false) {
+                Some(item) => (item, calculator::ID),
+                None => (fenix::goto(text, self.is_file)?, fenix::GOTO),
+            },
             Some(Scope::Provider(id)) if id == calculator::ID => {
                 (calculator::item(text, true)?, calculator::ID)
             }
@@ -502,7 +531,7 @@ impl Catalog {
                 .map(|a| MenuAction {
                     title: a.title.clone(),
                     key: a.key.as_deref().and_then(|k| k.chars().next()),
-                    disabled: unavailable(&shown.provider, external, a),
+                    disabled: unavailable(&shown.provider, external, a, self.fenix.as_ref()),
                 })
                 .collect(),
             dimmed: false,
@@ -781,14 +810,45 @@ mod tests {
             .iter()
             .map(|a| (a.title.as_str(), a.key, a.disabled.is_some()))
             .collect();
+        // No Fenix answering: Flint starts one with the project.
         assert_eq!(
             menu,
             [
+                ("Open in Fenix", Some('e'), false),
                 ("Open folder", Some('o'), false),
-                ("Open in Fenix", Some('e'), true),
                 ("Terminal here", Some('t'), false),
                 ("Copy path", Some('c'), false),
             ]
+        );
+        // A Fenix that can't open projects: disabled, saying why.
+        c.set_fenix(Some(Link {
+            version: "1.0.0".into(),
+            pid: 1,
+            capabilities: vec!["fenix/open".into()],
+        }));
+        let rows = c.search(Some("p"), "fenix", 0);
+        let why = rows[0].actions[0].disabled.as_deref().unwrap();
+        assert!(
+            why.contains("1.0.0") && why.contains("newer Fenix"),
+            "{why}"
+        );
+    }
+
+    #[test]
+    fn a_typed_path_with_a_position_is_offered_first() {
+        let mut c = catalog();
+        c.is_file = |p| p == r"C:\src\main.rs";
+        let rows = c.search(None, r"C:\src\main.rs:12:3", 0);
+        assert_eq!(rows[0].title, "main.rs:12:3");
+        assert_eq!(rows[0].badge, "Fenix");
+        assert!(c
+            .search(None, r"C:\src\other.rs:12", 0)
+            .iter()
+            .all(|r| r.badge != "Fenix"));
+        assert_eq!(
+            c.search(None, "2+2", 0)[0].badge,
+            "Calculator",
+            "a sum is still a sum"
         );
     }
 
