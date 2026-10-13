@@ -136,6 +136,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-executor"
+version = "1.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c96bf972d85afc50bf5ab8fe2d54d1586b4e0b46c97c50a0c9e71e2f7bcd812a"
+dependencies = [
+ "async-task",
+ "concurrent-queue",
+ "fastrand",
+ "futures-lite",
+ "pin-project-lite",
+ "slab",
+]
+
+[[package]]
+name = "async-fs"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8034a681df4aed8b8edbd7fbe472401ecf009251c8b40556b304567052e294c5"
+dependencies = [
+ "async-lock",
+ "blocking",
+ "futures-lite",
+]
+
+[[package]]
 name = "async-io"
 version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -657,7 +682,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.60.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -757,7 +782,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -813,7 +838,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 [[package]]
 name = "fenix-control"
 version = "1.0.0"
-source = "git+https://github.com/tpedneault/fenix?rev=899507281efcb3769cc7f941d1b1c00b8558b96e#899507281efcb3769cc7f941d1b1c00b8558b96e"
+source = "git+https://github.com/tpedneault/fenix?rev=ce118a2af1a0b70733d0a2dd426f94365cf5eb1a#ce118a2af1a0b70733d0a2dd426f94365cf5eb1a"
 dependencies = [
  "fenix-rpc",
  "libc",
@@ -825,12 +850,12 @@ dependencies = [
 [[package]]
 name = "fenix-forge"
 version = "1.0.0"
-source = "git+https://github.com/tpedneault/fenix?rev=899507281efcb3769cc7f941d1b1c00b8558b96e#899507281efcb3769cc7f941d1b1c00b8558b96e"
+source = "git+https://github.com/tpedneault/fenix?rev=ce118a2af1a0b70733d0a2dd426f94365cf5eb1a#ce118a2af1a0b70733d0a2dd426f94365cf5eb1a"
 
 [[package]]
 name = "fenix-gitlab"
 version = "1.0.0"
-source = "git+https://github.com/tpedneault/fenix?rev=899507281efcb3769cc7f941d1b1c00b8558b96e#899507281efcb3769cc7f941d1b1c00b8558b96e"
+source = "git+https://github.com/tpedneault/fenix?rev=ce118a2af1a0b70733d0a2dd426f94365cf5eb1a#ce118a2af1a0b70733d0a2dd426f94365cf5eb1a"
 dependencies = [
  "fenix-forge",
  "serde_json",
@@ -840,7 +865,7 @@ dependencies = [
 [[package]]
 name = "fenix-jira"
 version = "1.0.0"
-source = "git+https://github.com/tpedneault/fenix?rev=899507281efcb3769cc7f941d1b1c00b8558b96e#899507281efcb3769cc7f941d1b1c00b8558b96e"
+source = "git+https://github.com/tpedneault/fenix?rev=ce118a2af1a0b70733d0a2dd426f94365cf5eb1a#ce118a2af1a0b70733d0a2dd426f94365cf5eb1a"
 dependencies = [
  "serde_json",
  "ureq",
@@ -849,17 +874,17 @@ dependencies = [
 [[package]]
 name = "fenix-keymap"
 version = "1.0.0"
-source = "git+https://github.com/tpedneault/fenix?rev=899507281efcb3769cc7f941d1b1c00b8558b96e#899507281efcb3769cc7f941d1b1c00b8558b96e"
+source = "git+https://github.com/tpedneault/fenix?rev=ce118a2af1a0b70733d0a2dd426f94365cf5eb1a#ce118a2af1a0b70733d0a2dd426f94365cf5eb1a"
 
 [[package]]
 name = "fenix-rpc"
 version = "1.0.0"
-source = "git+https://github.com/tpedneault/fenix?rev=899507281efcb3769cc7f941d1b1c00b8558b96e#899507281efcb3769cc7f941d1b1c00b8558b96e"
+source = "git+https://github.com/tpedneault/fenix?rev=ce118a2af1a0b70733d0a2dd426f94365cf5eb1a#ce118a2af1a0b70733d0a2dd426f94365cf5eb1a"
 
 [[package]]
 name = "fenix-storage"
 version = "1.0.0"
-source = "git+https://github.com/tpedneault/fenix?rev=899507281efcb3769cc7f941d1b1c00b8558b96e#899507281efcb3769cc7f941d1b1c00b8558b96e"
+source = "git+https://github.com/tpedneault/fenix?rev=ce118a2af1a0b70733d0a2dd426f94365cf5eb1a#ce118a2af1a0b70733d0a2dd426f94365cf5eb1a"
 dependencies = [
  "dirs",
  "serde",
@@ -1171,9 +1196,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d50a92467f8ba5dd6e3ee5d4bd04d73ab2e4e1c44474a0674821dfce14b79bc"
 dependencies = [
  "futures-core",
+ "futures-io",
  "futures-macro",
  "futures-sink",
  "futures-task",
+ "memchr",
  "pin-project-lite",
  "slab",
 ]
@@ -1623,6 +1650,7 @@ dependencies = [
  "log",
  "secret-service",
  "windows-sys 0.60.2",
+ "zbus",
  "zeroize",
 ]
 
@@ -2316,7 +2344,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2716,7 +2744,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.60.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3160,7 +3188,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.5",
- "windows-sys 0.60.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3870,7 +3898,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4356,9 +4384,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb97012beadd29e654708a0fdb4c84bc046f537aecfde2c3ee0a9e4b4d48c725"
 dependencies = [
  "async-broadcast",
+ "async-executor",
+ "async-fs",
+ "async-io",
+ "async-lock",
  "async-process",
  "async-recursion",
+ "async-task",
  "async-trait",
+ "blocking",
  "enumflags2",
  "event-listener",
  "futures-core",
