@@ -17,6 +17,46 @@ Neither depends on anything of Flint's. Both answer a `provider` action
 (`execute`), and both are run through Flint's real provider host by the
 test suite, so they stay correct.
 
+## The ones that ship with Flint
+
+`flint-jira` and `flint-gitlab` come with Flint, beside `flint` itself,
+and are declared like any other provider. They use Fenix's own Jira and
+GitLab clients (`fenix-jira`, `fenix-gitlab`), so a self-hosted instance
+behind a corporate certificate works as it does in Fenix.
+
+```toml
+[[providers]]
+name = "jira"
+command = ["flint-jira", "--url", "https://jira.example.com", "--project", "OPS"]
+credential = "jira:https://jira.example.com"
+
+[[providers]]
+name = "gitlab"
+command = ["flint-gitlab", "--url", "https://gitlab.example.com",
+           "--project", "ops/telemetry", "--project", "ops/ground"]
+credential = "gitlab:https://gitlab.example.com"
+```
+
+Then store each token once (a personal access token; Jira Server/Data
+Center's bearer token, GitLab's `read_api` scope is enough):
+
+```
+flint credential set jira:https://jira.example.com
+flint credential set gitlab:https://gitlab.example.com
+```
+
+| Provider | Prefix | What it gives |
+|---|---|---|
+| `flint-jira` | `j` | Your open issues (assigned to you, not done, in the `--project`s if given), refreshed every five minutes and matched by Flint as you type. `j ` searches Jira's text; an issue key (`ops-123`) is looked up anywhere. Typing anything else never reaches Jira. `Enter` opens the issue; `c` copies its key, `l` its link. |
+| `flint-gitlab` | `mr` | For each `--project`, the open merge requests you opened or that are assigned to you, refreshed every three minutes, with their branch, author, a failed pipeline and conflicts in the subtitle. `Enter` opens one; `l` copies its link, `b` its branch. |
+
+`--name` gives either a different id, for a second instance (`name =
+"jira-lab"` with `--name jira-lab`).
+
+The credential names are the ones FENIX-INTEGRATION.md's F12 agrees for
+the suite (service `fenix-suite`), so once Fenix keeps its tokens in the
+credential store too, both use the same one.
+
 ## Declaring one
 
 Only providers named in `settings.toml` ever run:
@@ -37,6 +77,12 @@ command = ["python", "examples/provider-python/bookmarks.py"]
   it runs) to connect to Flint's control endpoint and say `hello` with
   this `name`. Until it does, `flint status` shows it as waiting.
 - `prefix = "bm"` overrides the scope keyword the provider asks for.
+- `credential = "kind:place"` gives the provider a secret from the OS
+  credential store (see CONFIGURATION.md): Flint reads it when it starts
+  the provider and passes it in the environment variable
+  `FLINT_PROVIDER_SECRET`. Read it from there; never take a token on the
+  command line, where other processes can see it, or from a file of your
+  own. A provider without a `credential` gets no such variable.
 
 Docs/CONFIGURATION.md has the rules for each key. Changing `[[providers]]`
 takes effect on save: removed providers stop, new ones start, and

@@ -13,6 +13,11 @@ use serde_json::Value;
 use crate::item::Item;
 use crate::message::{code, params, Id, RpcError};
 
+/// The environment variable a provider started with a `credential`
+/// finds its secret in (docs/PROVIDERS.md). Only the process Flint starts
+/// gets it; it is never written anywhere.
+pub const SECRET_ENV: &str = "FLINT_PROVIDER_SECRET";
+
 /// Most items in one `results` or `provider/setItems` batch.
 pub const MAX_BATCH: usize = 200;
 /// Largest `debounceMs` honoured.

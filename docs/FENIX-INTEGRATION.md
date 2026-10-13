@@ -279,8 +279,10 @@ which Fenix it was built against in a way a human can read.
 
 ### F12. One credential store for the suite <a id="f12"></a>
 
-**Blocks M8 sharing credentials; Flint can ask for its own tokens until
-then.**
+**Flint's half is done (M8):** it keeps tokens in the OS credential store
+under exactly these names (`flint credential set`). When Fenix moves its
+tokens there under the same names, both share them; until then each asks
+for its own.
 
 Fenix keeps Jira/GitLab/GitHub tokens in `settings.toml` (moving them to
 the OS credential store is already planned in its docs). When it moves,
@@ -340,7 +342,7 @@ anything that isn't a child process Fenix spawned.
 | F9 | `fenix-theme` crate | — | small |
 | F10 | Owned labels in `fenix-keymap` | — | small |
 | F11 | Release tags | — | trivial |
-| F12 | Shared credential naming | M8 | small |
+| F12 | Shared credential naming | Flint uses the names (M8); Fenix still keeps tokens in `settings.toml` | small |
 | F13 | Fenix pushes items to Flint | after M7 | medium |
 | F14 | App-agnostic folder roots | — | small |
 | F15 | GPU adapter fallback | — | small |

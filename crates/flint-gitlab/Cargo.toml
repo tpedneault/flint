@@ -1,0 +1,21 @@
+[package]
+name = "flint-gitlab"
+description = "GitLab merge requests in Flint: a provider process built on Fenix's fenix-gitlab."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+fenix-forge = { workspace = true }
+fenix-gitlab = { workspace = true }
+flint-protocol = { path = "../flint-protocol" }
+flint-provider-kit = { path = "../flint-provider-kit" }
+
+[dev-dependencies]
+flint-provider-kit = { path = "../flint-provider-kit", features = ["testing"] }

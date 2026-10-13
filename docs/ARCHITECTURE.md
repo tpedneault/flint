@@ -12,7 +12,7 @@ resident daemon, the budgets, ranking, the platform constraints) is in
 [DESIGN.md](DESIGN.md); the wire protocol is in [PROTOCOL.md](PROTOCOL.md);
 what comes from Fenix is in [FENIX-INTEGRATION.md](FENIX-INTEGRATION.md).
 
-Status: M7. The daemon, the control endpoint, the CLI and the hotkey
+Status: M8. The daemon, the control endpoint, the CLI and the hotkey
 (M1); searching apps, quicklinks and Flint's commands with Fenix's
 Insert/Normal modes, frecency and the stable merge (M2); Fenix level 0
 (M3): its projects and recent files, opening files in it, and following
@@ -22,7 +22,9 @@ isolated from Flint and from each other, with two examples (M5); and the
 windows provider, the calculator, the shell prefix and autostart (M6);
 and Fenix level 1 over Fenix's control channel: opening projects, files
 at a line, what Fenix shows as context, with each action enabled by what
-the running Fenix offers (M7). The *Filled in* column says which milestone
+the running Fenix offers (M7); and Jira and GitLab as provider processes
+built on Fenix's own clients, with their tokens in the OS credential
+store (M8). The *Filled in* column says which milestone
 gives each crate its first code, or its next.
 
 ## Crates
@@ -32,10 +34,13 @@ gives each crate its first code, or its next.
 | `flint-protocol` | Message types, handshake, error codes and size limits of [PROTOCOL.md](PROTOCOL.md); `Content-Length` framing compatible with `fenix-rpc`, with a bounded reader; the host-side handshake state machine and a blocking client. No threads, no sockets. | M1 (envelope, `hello`, client messages), M5 (provider messages) |
 | `flint-index` | Candidate store, scope keywords, matching with `nucleo-matcher` (fuzzy on titles, by substring on keywords and subtitles), frecency, the stable merge of streamed results. Pure; carries the 16 ms benchmark gate (`examples/bench.rs`). | M2 |
 | `flint-config` | `settings.toml`: the schema declared once, reading, per-setting validation; the hotkey `Chord`; Flint's folders and `FLINT_HOME`. | M1 |
-| `flint-platform` | Everything OS-specific: the control endpoint, the hotkey (behind the `Hotkey` trait), focus hand-off, the foreground window (sent to providers as context), opening and launching (`ShellExecuteExW`, detached spawns, hidden runs that report their exit status), revealing, the clipboard, the console, process facts, the window list (`EnumWindows`; switching and closing), autostart (the `Run` key; an XDG autostart entry) and the connection to Fenix's control endpoint (named and opened by `fenix-control`). | M1, M2, M4, M5, M6 |
+| `flint-platform` | Everything OS-specific: the control endpoint, the hotkey (behind the `Hotkey` trait), focus hand-off, the foreground window (sent to providers as context), opening and launching (`ShellExecuteExW`, detached spawns, hidden runs that report their exit status), revealing, the clipboard, the console, process facts, the window list (`EnumWindows`; switching and closing), autostart (the `Run` key; an XDG autostart entry), the connection to Fenix's control endpoint (named and opened by `fenix-control`), secrets in the OS credential store (`keyring`, under F12's names) and reading one from the terminal without echo. | M1, M2, M4, M5, M6, M7, M8 |
 | `flint-providers` | Built-in providers as `Item`s: apps (Start Menu shortcuts; `.desktop` files, parsed per the spec), quicklinks, Flint's commands, the calculator (its own expression parser), the shell prefix (which shell, and the arguments that run one command) and windows (items from the platform's list). Discovery is file-system walking, tested on any OS. | M2, M6 |
 | `flint-fenix` | Everything Fenix: its state files (projects, recent files) and theme/font settings read defensively against fixtures, its projects, recent files and typed `path:line:col` as items, locating `fenix`; the control-protocol client with capability detection (`fenix-control`'s client over any reader and writer, tested against Fenix's own server), and starting Fenix with the request as flags when none is running. | M3, M7 |
-| `flint-host` | The control server for CLI clients (M1); the provider host (M5): spawning providers and accepting connecting ones, query debounce and routing, `execute` timeouts, restart backoff and disabling, per-provider logs. Owns the threads that talk to peers; nothing in it blocks the caller. Also `flint-test-provider`, a misbehaving provider for its tests. | M1, M5 |
+| `flint-host` | The control server for CLI clients (M1); the provider host (M5): spawning providers and accepting connecting ones, query debounce and routing, `execute` timeouts, restart backoff and disabling, per-provider logs, a provider's secret in its environment (or not starting it, saying why, when the secret is missing), and finding a bare program name beside `flint` when it isn't on the `PATH`. Owns the threads that talk to peers; nothing in it blocks the caller. Also `flint-test-provider`, a misbehaving provider for its tests. | M1, M5, M8 |
+| `flint-provider-kit` | The provider's side of the protocol for Flint's own providers: hello, register, queries coalesced to the newest, `execute` replies, static items refreshed on a timer, failures as log lines; reading flags and the secret. Not an SDK: third-party providers need nothing of Flint's (`examples/`). A fake HTTP server for providers' tests behind its `testing` feature. | M8 |
+| `flint-jira` | A provider process: your open Jira issues as static items, `j ` searching, issue keys looked up; on Fenix's `fenix-jira`. | M8 |
+| `flint-gitlab` | A provider process: your open merge requests in the projects named, as static items; on Fenix's `fenix-gitlab` and `fenix-forge`. | M8 |
 | `flint-gui` | winit + wgpu + glyphon: the window, query line with scope chip and mode badge, list with highlights and provider badges, footer; Insert/Normal modes; the action menu; the leader over `fenix-keymap`'s trie with a which-key list; Fenix's eight palettes; GPU with fallback adapter. | M1–M4 |
 | `flint` | The executable: command line, daemon or client role, the daemon's controller, the catalog (items, scopes, results, each row's menu), action handling, resolving `[leader]`, frecency on disk, its log and timing log; external providers' items and results joined to the ranking; the thread that does every exchange with Fenix, so the event loop never waits on it. | M1–M7 |
 
@@ -54,9 +59,12 @@ flint ──► every crate below
 flint ──► fenix-storage (frecency's state file)
 flint-fenix ─────► flint-protocol, flint-platform    (+ fenix-control, fenix-storage, serde_json, toml)
 flint-gui ───────► flint-config                      (+ winit, wgpu, glyphon, fenix-keymap)
+flint-jira ──────► flint-protocol, flint-provider-kit (+ fenix-jira)
+flint-gitlab ────► flint-protocol, flint-provider-kit (+ fenix-gitlab, fenix-forge)
+flint-provider-kit ► flint-protocol                  (+ serde_json)
 flint-host ──────► flint-protocol                    (+ fenix-rpc, serde_json)
 flint-providers ─► flint-protocol, flint-config
-flint-platform ──► flint-config                      (+ fenix-control, windows-sys, global-hotkey, arboard, libc)
+flint-platform ──► flint-config                      (+ fenix-control, keyring, windows-sys, global-hotkey, arboard, libc)
 flint-index ─────►                                   (+ nucleo-matcher, serde)
 flint-protocol ──►                                   (+ fenix-rpc, serde_json)
 flint-config ────►                                   (+ toml, dirs)

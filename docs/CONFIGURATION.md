@@ -101,7 +101,7 @@ it is out of date.
 | `fenix.executable` | text | `""` | The `fenix` program Flint starts when no Fenix is running to ask (a running one is reached over its control channel). Empty: `fenix` on the `PATH`, else beside the `flint` program. |
 | `shell.program` | text | `""` | The shell that runs what you type after `> ` (`pwsh`, `cmd`, `bash`, a full path). Empty: `pwsh` if it is on the `PATH`, else Windows PowerShell; on Linux, `$SHELL`, else `/bin/sh`. |
 | `leader` | a table of key sequences and actions | `see below` | What `SPC` sequences do in Normal mode: `"f r" = "scope:fenix.recent"`. An action is `scope:<provider>`, `flint:<command>`, `fenix:<command>` or `query:<text>`; a table `{ action = ..., label = ... }` adds a label, and `{ label = ... }` names a group. Without the table, the defaults below apply; with it, the table is the whole map. |
-| `providers` | entries with `name`, `command`, `connect`, `prefix` | `[]` | External providers (docs/PROVIDERS.md). `command` is the program and its arguments, as a list, started by Flint in the settings folder and talked to over its stdin and stdout; `connect = true` instead waits for a running program to connect to Flint itself. `prefix` overrides the provider's own scope keyword. Only providers named here ever run. |
+| `providers` | entries with `name`, `command`, `connect`, `prefix`, `credential` | `[]` | External providers (docs/PROVIDERS.md). `command` is the program and its arguments, as a list, started by Flint in the settings folder and talked to over its stdin and stdout; `connect = true` instead waits for a running program to connect to Flint itself. `prefix` overrides the provider's own scope keyword. `credential` names a secret in the OS credential store (`jira:https://jira.example.com`, stored with `flint credential set`) that Flint gives the provider when it starts it. Only providers named here ever run. |
 | `quicklinks` | entries with `keyword`, `name`, `url` | `[]` | Links with a keyword: typing the keyword and a space scopes the query to the link, and `Enter` opens `url` with `{query}` replaced by what you typed, percent-encoded. A link without `{query}` just opens. Written as `[[quicklinks]]` tables (see the example above). |
 
 ### Following Fenix
@@ -161,8 +161,13 @@ command = ["python", "examples/provider-python/bookmarks.py"]
 
 [[providers]]
 name = "jira"
-connect = true        # a program already running connects to Flint
+command = ["flint-jira", "--url", "https://jira.example.com"]
+credential = "jira:https://jira.example.com"   # its token, from the OS credential store
 prefix = "ji"         # instead of the provider's own scope keyword
+
+[[providers]]
+name = "notes"
+connect = true        # a program already running connects to Flint
 ```
 
 - `name` is lowercase letters, digits, `.`, `_` and `-`, unique, and must
@@ -171,6 +176,15 @@ prefix = "ji"         # instead of the provider's own scope keyword
   Flint doesn't run a shell. It starts in the settings folder, so a
   relative path is relative to `settings.toml`.
 - Give `command` or `connect = true`, not both.
+- A bare program name (`flint-jira`) is found on the `PATH`, or else
+  beside `flint` itself, where Flint's own providers ship.
+- `credential` names a secret in the OS credential store (Windows
+  Credential Manager, the Secret Service on Linux), shaped
+  `<kind>:<where>`. Store it once with `flint credential set <name>`,
+  which asks for it without echoing it; Flint gives it to the provider
+  when it starts it. Without it stored, the provider isn't started and
+  the footer says which command to run. Tokens never go in
+  `settings.toml`.
 - A bad entry is skipped with its reason; the others still run.
 - `flint status` lists each provider and its state (`running`,
   `restarting`, `disabled` and why); what it writes to stderr goes to

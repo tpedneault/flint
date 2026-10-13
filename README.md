@@ -9,11 +9,12 @@ Fenix's grammar (Vim's Insert/Normal modes and a `SPC` leader with
 which-key) and Fenix's themes, and is built to run on a locked-down
 corporate machine: no admin rights, no installer, no cloud service.
 
-**Status:** M7. Flint runs in the background (`flint autostart on` starts
+**Status:** M8. Flint runs in the background (`flint autostart on` starts
 it at login), comes up on its hotkey (or `flint toggle`), finds and
 launches apps, quicklinks, Fenix's projects and recent files and its own
 commands, switches windows (`w `), does sums (`2 * 21`) and runs shell
-commands (`> `), opens projects and `file:line:col` in the running Fenix, with Fenix's Insert/Normal modes,
+commands (`> `), opens projects and `file:line:col` in the running Fenix, lists your Jira
+issues and GitLab merge requests (`j `, `mr `), with Fenix's Insert/Normal modes,
 an action menu on `Tab` and a which-key leader on `SPC`, and follows
 Fenix's theme. Other programs add their own items and actions as
 [providers](docs/PROVIDERS.md).

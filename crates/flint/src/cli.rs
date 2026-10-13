@@ -26,6 +26,10 @@ pub enum Command {
     /// (with neither) say whether it is on. Done by this process; no
     /// daemon is involved.
     Autostart(Option<bool>),
+    /// `flint credential set|delete <name>`, or `flint credential <name>`
+    /// to say whether it is stored: secrets in the OS credential store,
+    /// for providers' `credential`. Done by this process.
+    Credential(Credential),
     /// Anything sent to the daemon.
     Request(ClientRequest),
 }
@@ -54,9 +58,22 @@ impl Command {
         match self {
             Command::Default => Some(ClientRequest::Show(ShowParams::default())),
             Command::Request(request) => Some(request.clone()),
-            Command::Version | Command::Help | Command::Autostart(_) => None,
+            Command::Version | Command::Help | Command::Autostart(_) | Command::Credential(_) => {
+                None
+            }
         }
     }
+}
+
+/// What `flint credential` was asked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Credential {
+    /// Store a secret under this name, asking for it without echo.
+    Set(String),
+    /// Remove it.
+    Delete(String),
+    /// Say whether it is stored (never what it is).
+    Check(String),
 }
 
 /// How a command that starts the daemon wants it to begin.
@@ -83,6 +100,12 @@ Commands:
   quit                 Stop Flint
   autostart [on|off]   Start Flint (hidden) when you log in, or stop doing so;
                        alone, say whether it does
+  credential set NAME  Store a secret (a provider's token) in the OS credential
+                       store as NAME, like jira:https://jira.example.com; it is
+                       read without echo, or from a pipe
+  credential delete NAME
+                       Remove it
+  credential NAME      Say whether NAME is stored
 
 Options:
   --console            Windows: show the daemon's log in a console window
@@ -122,6 +145,16 @@ pub fn parse(args: &[String]) -> Result<Cli, String> {
         ["autostart"] => Command::Autostart(None),
         ["autostart", "on"] => Command::Autostart(Some(true)),
         ["autostart", "off"] => Command::Autostart(Some(false)),
+        ["credential", "set", name] => Command::Credential(Credential::Set((*name).to_owned())),
+        ["credential", "delete", name] => {
+            Command::Credential(Credential::Delete((*name).to_owned()))
+        }
+        ["credential", name] if !matches!(*name, "set" | "delete") => {
+            Command::Credential(Credential::Check((*name).to_owned()))
+        }
+        ["credential", ..] => {
+            return Err("`credential` needs a name: `flint credential set jira:https://…`".into())
+        }
         [first, rest @ ..] => {
             let known = [
                 "--version",
@@ -135,6 +168,7 @@ pub fn parse(args: &[String]) -> Result<Cli, String> {
                 "reload",
                 "quit",
                 "autostart",
+                "credential",
             ];
             let wrong = if known.contains(first) {
                 rest.first().copied().unwrap_or(first)
@@ -208,6 +242,28 @@ mod tests {
                 activation_token: None
             }))
         );
+    }
+
+    #[test]
+    fn credential_commands_parse() {
+        assert_eq!(
+            command(&["credential", "set", "jira:https://j"]),
+            Command::Credential(Credential::Set("jira:https://j".into()))
+        );
+        assert_eq!(
+            command(&["credential", "delete", "jira:https://j"]),
+            Command::Credential(Credential::Delete("jira:https://j".into()))
+        );
+        assert_eq!(
+            command(&["credential", "jira:https://j"]),
+            Command::Credential(Credential::Check("jira:https://j".into()))
+        );
+        assert!(cli(&["credential", "set"])
+            .unwrap_err()
+            .contains("needs a name"));
+        assert!(command(&["credential", "set", "x:y"])
+            .starts_daemon()
+            .is_none());
     }
 
     #[test]

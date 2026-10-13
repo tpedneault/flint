@@ -35,13 +35,13 @@ use std::time::{Duration, Instant};
 
 use flint_protocol::frame::{read_frame, write_frame};
 use flint_protocol::provider::{
-    Cancel, Context, Execute, ExecuteResult, LogLevel, ProviderMessage, Query,
+    Cancel, Context, Execute, ExecuteResult, LogLevel, ProviderMessage, Query, SECRET_ENV,
 };
 use flint_protocol::{Action, HostInfo, HostSession, Id, Item, Message, Role};
 use serde_json::json;
 
 /// What a provider is told to do, from `[[providers]]`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ProviderConfig {
     /// Its id.
     pub name: String,
@@ -49,6 +49,34 @@ pub struct ProviderConfig {
     pub command: Vec<String>,
     /// It connects rather than being started.
     pub connect: bool,
+    /// The secret it is started with (`[[providers]] credential`).
+    pub secret: Secret,
+}
+
+/// A provider's secret, as the daemon found it in the credential store.
+/// Part of the configuration, so storing a new one restarts the provider
+/// with it.
+#[derive(Clone, PartialEq, Eq, Default)]
+pub enum Secret {
+    /// It asks for none.
+    #[default]
+    None,
+    /// Given to the process in `SECRET_ENV`.
+    Value(String),
+    /// It asks for one that isn't there: it isn't started, and this is
+    /// why (with what to do about it).
+    Missing(String),
+}
+
+impl std::fmt::Debug for Secret {
+    // Never the secret itself, whatever ends up formatted.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Secret::None => f.write_str("None"),
+            Secret::Value(_) => f.write_str("Value(<hidden>)"),
+            Secret::Missing(why) => write!(f, "Missing({why:?})"),
+        }
+    }
 }
 
 /// Something the daemon should know.
@@ -496,7 +524,7 @@ impl Shared {
     /// Spawns a configured provider, unless it connects by itself.
     fn start(self: &Arc<Self>, name: &str) {
         let log = ProviderLog::open(&self.logs, name);
-        let (command, generation) = {
+        let (command, secret, generation) = {
             let mut inner = self.lock();
             let Some(slot) = inner.slots.iter_mut().find(|s| s.config.name == name) else {
                 return;
@@ -509,11 +537,25 @@ impl Shared {
                 });
                 return;
             }
+            if let Secret::Missing(why) = &slot.config.secret {
+                // Starting it would only have it fail to authenticate.
+                slot.state = State::Disabled(why.clone());
+                log.line(&format!("not started: {why}"));
+                drop(inner);
+                (self.sink)(HostEvent::Changed {
+                    name: name.to_owned(),
+                });
+                return;
+            }
             slot.generation += 1;
             slot.state = State::Starting;
-            (slot.config.command.clone(), slot.generation)
+            let secret = match &slot.config.secret {
+                Secret::Value(secret) => Some(secret.clone()),
+                _ => None,
+            };
+            (slot.config.command.clone(), secret, slot.generation)
         };
-        let spawned = spawn(&command, &self.cwd);
+        let spawned = spawn(&command, &self.cwd, secret.as_deref());
         let mut child = match spawned {
             Ok(child) => child,
             Err(e) => {
@@ -922,13 +964,18 @@ impl Shared {
 
 /// Spawns `command` with its standard streams piped, without a console
 /// window on Windows, and never through a shell.
-fn spawn(command: &[String], cwd: &Path) -> io::Result<Child> {
+fn spawn(command: &[String], cwd: &Path, secret: Option<&str>) -> io::Result<Child> {
     let program = command
         .first()
         .ok_or_else(|| io::Error::other("empty command"))?;
-    // `resolve_command` finds `.cmd`/`.bat` shims on Windows' PATH the way
-    // a shell would (npm-installed tools, `py`); elsewhere it's a no-op.
-    let mut process = Command::new(fenix_rpc::resolve_command(program));
+    let mut process = Command::new(locate(program));
+    if let Some(secret) = secret {
+        process.env(SECRET_ENV, secret);
+    } else {
+        // Flint's own environment never carries one, but a provider must
+        // not inherit one meant for another.
+        process.env_remove(SECRET_ENV);
+    }
     process
         .args(&command[1..])
         .current_dir(cwd)
@@ -944,6 +991,31 @@ fn spawn(command: &[String], cwd: &Path) -> io::Result<Child> {
         process.creation_flags(CREATE_NO_WINDOW);
     }
     process.spawn()
+}
+
+/// The program to run for `program`. A bare name (`flint-jira`) is
+/// looked for on the `PATH` first and then beside the running `flint`,
+/// so the providers that ship with Flint work from wherever Flint was
+/// unpacked; `resolve_command` finds `.cmd`/`.bat` shims on Windows'
+/// `PATH` the way a shell would (npm-installed tools, `py`). A path is
+/// used as given, relative to the settings folder.
+fn locate(program: &str) -> String {
+    let bare = !program.contains(['/', '\\']);
+    let exe = format!("{program}{}", std::env::consts::EXE_SUFFIX);
+    let on_path = std::env::var_os("PATH").is_some_and(|path| {
+        std::env::split_paths(&path)
+            .any(|dir| dir.join(program).is_file() || dir.join(&exe).is_file())
+    });
+    if bare && !on_path {
+        let beside = std::env::current_exe()
+            .ok()
+            .and_then(|flint| flint.parent().map(|dir| dir.join(&exe)))
+            .filter(|p| p.is_file());
+        if let Some(beside) = beside {
+            return beside.display().to_string();
+        }
+    }
+    fenix_rpc::resolve_command(program)
 }
 
 /// A provider's log: `logs/providers/<name>.log`, a timestamp per line,
