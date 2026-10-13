@@ -34,13 +34,13 @@ publish = false
 # model it implements too;
 # never `fenix-project`, `fenix-gui` or `fenix-picker`.
 [workspace.dependencies]
-fenix-control = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
-fenix-forge = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
-fenix-gitlab = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
-fenix-jira = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
-fenix-keymap = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
-fenix-rpc = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
-fenix-storage = { git = "https://github.com/tpedneault/fenix", rev = "899507281efcb3769cc7f941d1b1c00b8558b96e" }
+fenix-control = { git = "https://github.com/tpedneault/fenix", rev = "ce118a2af1a0b70733d0a2dd426f94365cf5eb1a" }
+fenix-forge = { git = "https://github.com/tpedneault/fenix", rev = "ce118a2af1a0b70733d0a2dd426f94365cf5eb1a" }
+fenix-gitlab = { git = "https://github.com/tpedneault/fenix", rev = "ce118a2af1a0b70733d0a2dd426f94365cf5eb1a" }
+fenix-jira = { git = "https://github.com/tpedneault/fenix", rev = "ce118a2af1a0b70733d0a2dd426f94365cf5eb1a" }
+fenix-keymap = { git = "https://github.com/tpedneault/fenix", rev = "ce118a2af1a0b70733d0a2dd426f94365cf5eb1a" }
+fenix-rpc = { git = "https://github.com/tpedneault/fenix", rev = "ce118a2af1a0b70733d0a2dd426f94365cf5eb1a" }
+fenix-storage = { git = "https://github.com/tpedneault/fenix", rev = "ce118a2af1a0b70733d0a2dd426f94365cf5eb1a" }
 
 # Third-party crates used by more than one member, or pinned to Fenix's
 # versions on purpose: the rendering stack matches Fenix's exactly so fonts

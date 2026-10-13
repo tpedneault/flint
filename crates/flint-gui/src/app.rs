@@ -253,6 +253,13 @@ impl Ui<'_> {
         self.state.redraw();
     }
 
+    /// Takes the footer's message down early, when what it said stopped
+    /// being true.
+    pub fn clear_message(&mut self) {
+        self.state.launcher.clear_message();
+        self.state.redraw();
+    }
+
     /// Sets or clears the footer's standing notice.
     pub fn set_notice(&mut self, notice: Option<FooterLine>) {
         self.state.launcher.set_notice(notice);

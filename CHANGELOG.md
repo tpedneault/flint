@@ -101,9 +101,21 @@ All notable changes to Flint are recorded here. The format follows
 - `flint credential set|delete <name>`: tokens in the OS credential store,
   never in `settings.toml`; `[[providers]] credential` hands one to a
   provider when Flint starts it.
+- Fenix's commands, agenda and notebook (Fenix #59): `: ` lists the
+  commands Fenix lets other programs run, with their keys, and `Enter`
+  runs one; `t ` lists the agenda's open tasks, `Enter` clocking in (or
+  out); `n <text>` captures a note into the Inbox or today's journal.
+  `fenix:<command>` leader bindings now run.
+
+### Changed
+
+- `:`, `t` and `n` are Flint's scope keywords now; a quicklink using one
+  keeps working by name, and `flint status` says why its keyword doesn't.
 
 ### Fixed
 
+- Flint builds on Linux without the libdbus development package: the
+  credential store uses the pure-Rust Secret Service client.
 - The `Space` of `Alt+Space` is no longer typed into the query when Flint
   appears (keys already held when the window takes focus are ignored), so
   a scope keyword typed straight after the hotkey (`b `) scopes the query

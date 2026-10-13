@@ -4,9 +4,9 @@ What Flint uses from Fenix, how it degrades when Fenix can't give it
 something, and the changes Fenix needs for the integration to be reliable.
 Every statement about Fenix here was checked against its source at
 `f05780740b7d45e41eedc35b846dba7c832f4d49` (2026-10-11), and the control
-channel against `899507281efcb3769cc7f941d1b1c00b8558b96e` (2026-10-12,
-Fenix #58), the revision Flint now pins; file references are relative to
-the Fenix repository.
+channel against `ce118a2af1a0b70733d0a2dd426f94365cf5eb1a` (2026-10-13,
+Fenix #58 and #59), the revision Flint now pins; file references are
+relative to the Fenix repository.
 
 ## Principles
 
@@ -92,11 +92,23 @@ named differently from Fenix. On a worker thread, never the event loop:
 - Fenix's answer settles it: Flint hides once Fenix has done it, or shows
   Fenix's reason in the footer and stays.
 
-Not yet: Fenix commands with their keys (`fenix/commands`,
-`fenix/runCommand`), notebook capture and agenda clock in/out wait for F5,
-F6 and the rest of F1. `fenix:<command>` leader bindings and any provider
-action naming those methods are dimmed, saying the running Fenix doesn't
-offer them, and light up when it lists them.
+Since Fenix #59, and on the same look, Fenix's commands, notebook capture
+and the agenda:
+
+- `: ` lists the commands Fenix marks runnable from outside (`external`),
+  by description, with the keys that run them in Fenix (`SPC a a`) in the
+  subtitle; `Enter` is `fenix/runCommand`, and Fenix comes forward.
+  `fenix:<command>` leader bindings use the same method;
+- `t ` lists the agenda's open tasks (`fenix/agenda.tasks`), the one being
+  clocked first (`fenix/state`'s `agendaTimer`); `Enter` clocks in, or out
+  on the running one (`fenix/agenda.clockIn`, `clockOut`);
+- `n <text>` captures into the notebook's Inbox, or today's journal from
+  the menu (`fenix/notebook.capture`), without Fenix taking the focus.
+
+Capture and the clock happen behind the scenes, so Flint stays open and
+confirms in the footer; Fenix stays the only writer of its agenda and
+notebook (F8). Each is offered only when the running Fenix lists the
+method; with no Fenix running, or an older one, the prefix says why.
 
 ## Changes Fenix needs
 
@@ -105,9 +117,11 @@ Flint milestone that waits on it.
 
 ### F1. A control protocol <a id="f1"></a>
 
-**First half landed in Fenix #58** (`hello`, `open`, `openProject`,
-`state`); `commands`, `runCommand`, `notebook.capture` and the agenda
-methods remain, with F5 and F6.
+**Landed in Fenix #58** (`hello`, `open`, `openProject`, `state`) **and
+#59** (`commands`, `runCommand`, `notebook.capture`, `agenda.tasks`,
+`agenda.clockIn`, `agenda.clockOut`, and `agendaTimer` in `state`). Task
+ids are JSON numbers; statuses are `todo`, `inProgress`, `blocked`,
+`done`.
 
 Today the hand-off carries a list of paths, one way, with no reply. Flint
 needs to ask Fenix things and to tell it more than "open these files".
@@ -200,7 +214,8 @@ writing a second one.
 
 ### F5. Commands that take arguments <a id="f5"></a>
 
-**Still needed: blocks capture and clock-in** (the rest of M7).
+**Landed in Fenix #59**, as control methods implemented against `App`
+(capture and the clock each had one place doing them already).
 
 `CommandFn` is `fn(&mut CommandCtx)` with no parameters, and commands
 like `notebook.capture` and `agenda.toggle_clock` open a prompt or act on
@@ -211,7 +226,9 @@ in F1 directly against `App`. The second is smaller; the first scales.
 
 ### F6. Command metadata for outside callers <a id="f6"></a>
 
-**Still needed: blocks the Fenix commands provider** (the rest of M7).
+**Landed in Fenix #59**: `keys` from the leader trie (the shortest
+binding), and 63 commands marked `external`, guarded by a test that runs
+each with a text buffer in front and with a page in front.
 
 The registry and the leader trie already hold everything needed: ids,
 descriptions, and the key sequence bound to each id. Expose them through
@@ -240,7 +257,9 @@ Flint reads today").
 
 ### F8. Safe external changes to agenda and notebook <a id="f8"></a>
 
-**Flint works around it by never writing; listed so nobody else trips.**
+**Landed in Fenix #59**: capture and the clock go through Fenix, its
+only writer, and Fenix reloads `agenda.json` when it changes on disk
+(keeping what it has when the file can't be read).
 
 `agenda.json` is loaded once and saved whole; a change made by anyone
 else is overwritten at Fenix's next save. The notebook's index likewise
@@ -331,14 +350,14 @@ anything that isn't a child process Fenix spawned.
 
 | # | Change | Blocks | Size |
 |---|---|---|---|
-| F1 | Control protocol (JSON-RPC on the single-instance channel) | first half landed (#58); the rest blocks M7's commands, capture, agenda | medium |
+| F1 | Control protocol (JSON-RPC on the single-instance channel) | landed (#58, #59) | medium |
 | F2 | Per-user named pipe / Unix socket | landed (#58) | small |
 | F3 | Foreground hand-off on Windows | landed (#58) | small |
 | F4 | `path:line:col` on open | landed (#58) | small |
-| F5 | Commands with arguments | M7 (capture, clock-in) | small–medium |
-| F6 | Command metadata and `external` flag | M7 (commands provider) | small |
+| F5 | Commands with arguments | landed (#59) | small–medium |
+| F6 | Command metadata and `external` flag | landed (#59) | small |
 | F7 | Light state crate; recent files in plain form | — | small |
-| F8 | Single writer for agenda/notebook; reload agenda on change | — | small |
+| F8 | Single writer for agenda/notebook; reload agenda on change | landed (#59) | small |
 | F9 | `fenix-theme` crate | — | small |
 | F10 | Owned labels in `fenix-keymap` | — | small |
 | F11 | Release tags | — | trivial |
@@ -350,6 +369,6 @@ anything that isn't a child process Fenix spawned.
 
 The first Fenix pull request, **F2 + F16 + F1 (`hello`, `open`,
 `openProject`, `state`) + F3 + F4**, landed as Fenix #58 and is what M7
-builds on. The second is **F5 + F6 + the rest of F1** (`commands`,
-`runCommand`, `notebook.capture`, `agenda.*`), ideally with F8's reload of
-`agenda.json`; Flint's side of those follows it.
+builds on. The second, **F5 + F6 + the rest of F1 + F8**, landed as
+Fenix #59, completing M7. What remains (F7, F9–F11, F13–F15, and F12's
+Fenix half) blocks nothing in Flint.

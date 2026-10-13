@@ -2,15 +2,14 @@
 
 Flint is a keyboard-first launcher for Windows and Linux, the front door
 to Fenix (https://github.com/tpedneault/fenix) and the tools built around
-it. The design is settled; M0 (workspace), M1 (daemon, endpoint, CLI,
-hotkey, window), M2 (search, modes, apps, quicklinks, frecency), M3
-(Fenix level 0: projects, recent files, theme), M4 (action menu,
-which-key leader, footer messages), M5 (external providers, two
-examples), M6 (windows, calculator, shell prefix, autostart) and M7's
-first part (Fenix level 1 over Fenix's control channel: projects, files at
-a line, context) and M8 (Jira and GitLab providers, credentials in the OS
-store) are in place. M7's commands, capture and agenda wait for Fenix's
-F5/F6.
+it. The design is settled and M0–M8 are in place: M0 (workspace), M1
+(daemon, endpoint, CLI, hotkey, window), M2 (search, modes, apps,
+quicklinks, frecency), M3 (Fenix level 0: projects, recent files, theme),
+M4 (action menu, which-key leader, footer messages), M5 (external
+providers, two examples), M6 (windows, calculator, shell prefix,
+autostart), M7 (Fenix level 1 over Fenix's control channel: projects,
+files at a line, context, Fenix's commands, capture, the agenda clock) and
+M8 (Jira and GitLab providers, credentials in the OS store).
 
 ## Read first, in this order
 
