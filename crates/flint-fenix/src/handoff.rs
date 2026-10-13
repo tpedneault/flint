@@ -61,7 +61,7 @@ pub fn arguments(method: &str, params: &Value) -> Result<Vec<String>, String> {
             _ => Err("no project folder to open".into()),
         },
         other => Err(format!(
-            "`{other}` needs a running Fenix that offers it, and Fenix doesn't yet"
+            "`{other}` needs Fenix running; start Fenix and try again"
         )),
     }
 }
@@ -123,7 +123,7 @@ mod tests {
             ["--project", "C:\\dev"]
         );
         let err = arguments("fenix/agenda.clockIn", &json!({})).unwrap_err();
-        assert!(err.contains("running Fenix"), "{err}");
+        assert!(err.contains("needs Fenix running"), "{err}");
     }
 
     #[test]

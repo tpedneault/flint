@@ -86,6 +86,26 @@ fn builtins() -> Vec<Provider> {
             0.0,
         ),
         builtin(fenix::GOTO, fenix::GOTO_TITLE, None, 0.0),
+        builtin(
+            fenix::COMMANDS,
+            fenix::COMMANDS_TITLE,
+            Some(fenix::COMMANDS_PREFIX),
+            // Below apps and Flint's commands of the same match: typing a
+            // word shouldn't put "Open the agenda" over the app it names.
+            -6.0,
+        ),
+        builtin(
+            fenix::AGENDA,
+            fenix::AGENDA_TITLE,
+            Some(fenix::AGENDA_PREFIX),
+            -2.0,
+        ),
+        builtin(
+            fenix::CAPTURE,
+            fenix::CAPTURE_TITLE,
+            Some(fenix::CAPTURE_PREFIX),
+            0.0,
+        ),
     ]
 }
 
@@ -467,6 +487,9 @@ impl Catalog {
             }
             Some(Scope::Provider(id)) if id == shell::ID => {
                 (shell::item(text, &self.shell)?, shell::ID)
+            }
+            Some(Scope::Provider(id)) if id == fenix::CAPTURE => {
+                (fenix::capture(text)?, fenix::CAPTURE)
             }
             Some(_) => return None,
         };
@@ -998,6 +1021,39 @@ mod tests {
         assert_eq!(rows[0].badge, "Windows");
         assert!(rows[0].actions.iter().all(|a| a.disabled.is_none()));
         assert_eq!(c.items_of(windows::ID).len(), 1);
+    }
+
+    #[test]
+    fn fenix_commands_agenda_and_capture_have_prefixes_and_need_fenix() {
+        let mut c = catalog();
+        let commands = [flint_fenix::control::CommandInfo {
+            id: "agenda.open".into(),
+            description: "Open the agenda".into(),
+            keys: Some("SPC a a".into()),
+            external: true,
+        }];
+        c.set_items(fenix::COMMANDS, fenix::commands(&commands));
+        let rows = c.search(Some(":"), "agenda", 0);
+        assert_eq!(titles(&rows), ["Open the agenda"]);
+        assert_eq!(rows[0].subtitle, "SPC a a · agenda.open");
+        // No Fenix answering: running a command needs one, and says so.
+        let why = rows[0].actions[0].disabled.as_deref().unwrap();
+        assert!(why.contains("needs Fenix running"), "{why}");
+
+        let (chip, rest) = c.split_scope("n buy film").unwrap();
+        assert_eq!(chip.label, "Notebook");
+        c.set_fenix(Some(Link {
+            version: "1.2.0".into(),
+            pid: 1,
+            capabilities: vec!["fenix/notebook.capture".into(), "fenix/runCommand".into()],
+        }));
+        let rows = c.search(Some(&chip.keyword), rest, 0);
+        assert_eq!(titles(&rows), ["buy film"]);
+        assert!(rows[0].actions.iter().all(|a| a.disabled.is_none()));
+        assert!(c.search(Some(":"), "agenda", 0)[0].actions[0]
+            .disabled
+            .is_none());
+        assert_eq!(c.split_scope("t ").unwrap().0.label, "Agenda");
     }
 
     #[test]

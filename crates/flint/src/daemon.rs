@@ -196,6 +196,8 @@ pub fn run(
         fenix_jobs,
         fenix_looking: false,
         fenix_running: HashMap::new(),
+        from_fenix: false,
+        fenix_lists: None,
         fenix_tokens: 0,
         window_handles: HashMap::new(),
         windows_unavailable: None,
@@ -270,8 +272,18 @@ struct Daemon {
     fenix_jobs: Option<mpsc::Sender<Job>>,
     /// A look at Fenix is under way: don't queue another.
     fenix_looking: bool,
-    /// Fenix actions under way: token → what was run, for messages.
-    fenix_running: HashMap<u64, String>,
+    /// Fenix actions under way: token → what was run (title, method,
+    /// params), for what to do and say when Fenix answers.
+    fenix_running: HashMap<u64, (String, String, serde_json::Value)>,
+    /// The user came from Fenix this show: what it shows is the context.
+    from_fenix: bool,
+    /// The commands and tasks last shown, and the clock, so an unchanged
+    /// look costs no re-ranking.
+    fenix_lists: Option<(
+        Vec<flint_fenix::control::CommandInfo>,
+        Vec<flint_fenix::control::AgendaTask>,
+        Option<flint_fenix::control::AgendaTimer>,
+    )>,
     fenix_tokens: u64,
     /// The open windows' handles, by item id, as listed at the last show.
     window_handles: HashMap<String, u64>,
@@ -672,22 +684,23 @@ impl Daemon {
             }),
             fenix: None,
         };
-        // What Fenix shows matters only when the user came from Fenix;
-        // whether one answers, and what it can do, matters every time.
-        let from_fenix = self.context.foreground.as_ref().is_some_and(|f| {
+        // What Fenix shows is context only when the user came from Fenix;
+        // whether one answers, what it can do, its commands and agenda
+        // matter every time.
+        self.from_fenix = self.context.foreground.as_ref().is_some_and(|f| {
             let name = f.process.to_ascii_lowercase();
             name == "fenix.exe" || name == "fenix"
         });
-        self.look_at_fenix(from_fenix);
+        self.look_at_fenix();
     }
 
     /// Queues a look at Fenix, unless one is under way.
-    fn look_at_fenix(&mut self, state: bool) {
+    fn look_at_fenix(&mut self) {
         if self.fenix_looking {
             return;
         }
         if let Some(jobs) = &self.fenix_jobs {
-            self.fenix_looking = jobs.send(Job::Look { state }).is_ok();
+            self.fenix_looking = jobs.send(Job::Look).is_ok();
         }
     }
 
@@ -697,17 +710,38 @@ impl Daemon {
             Done::Looked {
                 link,
                 state,
+                commands,
+                tasks,
                 problem,
             } => {
                 self.fenix_looking = false;
                 if let Some(problem) = problem {
                     self.log.line(&format!("fenix: {problem}"));
                 }
-                if let Some(state) = state.filter(|s| s.project.is_some() || s.file.is_some()) {
+                let timer = state.as_ref().and_then(|s| s.agenda_timer.clone());
+                if let Some(state) =
+                    state.filter(|s| self.from_fenix && (s.project.is_some() || s.file.is_some()))
+                {
                     self.context.fenix = Some(FenixContext {
                         project: state.project,
                         file: state.file,
                     });
+                }
+                let lists = (commands, tasks, timer);
+                if self.fenix_lists.as_ref() != Some(&lists) {
+                    for problem in
+                        self.catalog
+                            .set_items(fenix::COMMANDS, fenix::commands(&lists.0))
+                            .into_iter()
+                            .chain(self.catalog.set_ranked(
+                                fenix::AGENDA,
+                                fenix::tasks(&lists.1, lists.2.as_ref()),
+                            ))
+                    {
+                        self.log.line(&format!("fenix: {problem}"));
+                    }
+                    self.fenix_lists = Some(lists);
+                    self.reshow(ui);
                 }
                 if self.catalog.fenix() != link.as_ref() {
                     match &link {
@@ -720,8 +754,17 @@ impl Daemon {
                         None => self.log.line("fenix: level 0, no Fenix answering"),
                     }
                     self.catalog.set_fenix(link);
-                    // Fenix actions may have become available, or not.
+                    // Fenix actions may have become available, or not; and
+                    // a Fenix prefix typed before the look came back may
+                    // have said "needs Fenix running" too soon.
                     self.reshow(ui);
+                    let scope = ui.scope().map(|c| c.keyword.clone());
+                    let provider = scope.as_deref().and_then(|k| self.catalog.provider_for(k));
+                    match self.fenix_scope(provider.as_deref()) {
+                        Some(Ok(())) => ui.clear_message(),
+                        Some(Err(why)) => ui.set_message(FooterLine::error(why)),
+                        None => {}
+                    }
                 }
             }
             Done::Ran {
@@ -732,11 +775,11 @@ impl Daemon {
                 if link.is_some() && self.catalog.fenix() != link.as_ref() {
                     self.catalog.set_fenix(link);
                 }
-                let Some(what) = self.fenix_running.remove(&token) else {
+                let Some((what, method, params)) = self.fenix_running.remove(&token) else {
                     return;
                 };
                 match result {
-                    Ok(()) => ui.hide(),
+                    Ok(answer) => self.fenix_succeeded(&what, &method, &params, &answer, ui),
                     Err(why) => {
                         self.log.line(&format!("fenix: {what}: {why}"));
                         ui.set_message(FooterLine::error(why));
@@ -746,8 +789,60 @@ impl Daemon {
         }
     }
 
+    /// What follows a Fenix action that worked. One that brings Fenix
+    /// forward (opening, running a command) hands off: Flint hides. One
+    /// done behind the scenes (a capture, the clock) leaves nothing else
+    /// on screen to show it worked, so Flint stays and says so; the
+    /// agenda is looked at again, so its rows show the clock as it is now.
+    fn fenix_succeeded(
+        &mut self,
+        what: &str,
+        method: &str,
+        params: &serde_json::Value,
+        answer: &serde_json::Value,
+        ui: &mut Ui<'_>,
+    ) {
+        let said = match method {
+            "fenix/notebook.capture" => {
+                let to = match params["target"].as_str() {
+                    Some("journal") => "today's journal",
+                    _ => "the Inbox",
+                };
+                let entry = answer["entry"].as_str().unwrap_or_default();
+                self.log.line(&format!("fenix: captured to {entry}"));
+                ui.set_query(String::new());
+                format!("Captured to {to}")
+            }
+            "fenix/agenda.clockIn" => format!("Clocked in on {what}"),
+            "fenix/agenda.clockOut" => "Clocked out".to_owned(),
+            _ => {
+                ui.hide();
+                return;
+            }
+        };
+        ui.set_message(FooterLine::info(said));
+        self.look_at_fenix();
+    }
+
+    /// For a Fenix prefix's scope, whether what it lists is on offer:
+    /// its list is empty when no Fenix answers, or this one doesn't offer
+    /// it, and the footer says which. `None` for any other scope.
+    fn fenix_scope(&self, provider: Option<&str>) -> Option<Result<(), String>> {
+        let method = match provider? {
+            fenix::COMMANDS => "fenix/commands",
+            fenix::AGENDA => "fenix/agenda.tasks",
+            fenix::CAPTURE => "fenix/notebook.capture",
+            _ => return None,
+        };
+        Some(flint_fenix::control::available(
+            method,
+            self.catalog.fenix(),
+        ))
+    }
+
     /// Hands a Fenix action to the Fenix thread; Flint stays open, saying
-    /// so, until it is done, then hides (or says why it failed).
+    /// so, until it is done (see [`Daemon::fenix_succeeded`]) or says why
+    /// it failed.
     fn fenix_action(
         &mut self,
         method: &str,
@@ -767,7 +862,8 @@ impl Daemon {
             executable: self.fenix_executable(),
         })
         .map_err(|_| "Flint's line to Fenix has stopped; see the log".to_owned())?;
-        self.fenix_running.insert(token, title.to_owned());
+        self.fenix_running
+            .insert(token, (title.to_owned(), method.to_owned(), params.clone()));
         ui.set_message(FooterLine::info(format!("{title}…")));
         Ok(After::Stay)
     }
@@ -1036,6 +1132,9 @@ impl Daemon {
                 ui.set_message(FooterLine::error(why.clone()));
             }
         }
+        if let Some(Err(why)) = self.fenix_scope(provider.as_deref()) {
+            ui.set_message(FooterLine::error(why));
+        }
         // A provider's prefix typed while it is down: say why nothing
         // answers (a down provider's prefix isn't a scope keyword).
         if ui.scope().is_none() {
@@ -1129,7 +1228,13 @@ impl Daemon {
             }
             ActionKind::Reveal { target } => launch::reveal(target).map(|()| After::Hide),
             ActionKind::Fenix { method, params } => {
-                self.fenix_action(method, params, &action.title, ui)
+                // The clock's messages name the task, not the action.
+                let title = if method == "fenix/agenda.clockIn" {
+                    &shown.item.title
+                } else {
+                    &action.title
+                };
+                self.fenix_action(method, params, title, ui)
             }
             ActionKind::Unknown => Err(format!(
                 "`{}` is a kind of action this Flint doesn't know",

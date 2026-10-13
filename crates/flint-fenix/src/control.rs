@@ -5,10 +5,11 @@
 //! can do (`capabilities`, method names) and its pid. Flint goes by the
 //! capabilities, never the version: an action whose method this Fenix
 //! doesn't list is shown disabled with that reason, so a Fenix older or
-//! newer than Flint expects costs individual actions, not Flint. Today's
-//! Fenix offers `fenix/open` (with line and column), `fenix/openProject`
-//! and `fenix/state`; its commands, notebook capture and agenda (F5, F6)
-//! come later and light up here when Fenix lists them.
+//! newer than Flint expects costs individual actions, not Flint. Since
+//! Fenix #58, `fenix/open` (with line and column), `fenix/openProject` and
+//! `fenix/state`; since #59, its commands with their keys
+//! (`fenix/commands`, `fenix/runCommand`), notebook capture and the
+//! agenda's tasks and clock (F5, F6).
 //!
 //! The protocol is Fenix's own client (`fenix-control`), driven over any
 //! reader and writer: connecting is `flint-platform`'s, and these
@@ -23,7 +24,7 @@
 use std::io::{Read, Write};
 
 use fenix_control::protocol::method;
-pub use fenix_control::protocol::StateResult;
+pub use fenix_control::protocol::{AgendaTask, AgendaTimer, CommandInfo, StateResult, TaskStatus};
 use fenix_control::{Client, ClientError};
 use serde_json::Value;
 
@@ -63,7 +64,7 @@ pub fn available(method: &str, link: Option<&Link>) -> Result<(), String> {
         )),
         None if STARTABLE.contains(&method) => Ok(()),
         None => Err(format!(
-            "`{method}` needs a running Fenix that offers it, and Fenix doesn't yet"
+            "`{method}` needs Fenix running; start Fenix and try again"
         )),
     }
 }
@@ -106,13 +107,42 @@ impl<R: Read, W: Write> Session<R, W> {
             .map_err(|e| why("couldn't say what it shows", &e))
     }
 
+    /// Fenix's commands that may be run from outside (`external`), with
+    /// their keys; none from a Fenix that doesn't list them.
+    pub fn commands(&mut self) -> Result<Vec<CommandInfo>, String> {
+        if !self.link.can(method::COMMANDS) {
+            return Ok(Vec::new());
+        }
+        let commands = self
+            .client
+            .commands()
+            .map_err(|e| why("couldn't list its commands", &e))?;
+        Ok(commands.into_iter().filter(|c| c.external).collect())
+    }
+
+    /// The agenda's tasks that aren't done; none from a Fenix without an
+    /// agenda to offer.
+    pub fn open_tasks(&mut self) -> Result<Vec<AgendaTask>, String> {
+        if !self.link.can(method::AGENDA_TASKS) {
+            return Ok(Vec::new());
+        }
+        let open = vec![
+            TaskStatus::InProgress,
+            TaskStatus::Todo,
+            TaskStatus::Blocked,
+        ];
+        self.client
+            .agenda_tasks(Some(open))
+            .map(|r| r.tasks)
+            .map_err(|e| why("couldn't list the agenda", &e))
+    }
+
     /// Carries out the Fenix action `method` with `params`, as an item's
-    /// action gave them.
-    pub fn execute(&mut self, method: &str, params: &Value) -> Result<(), String> {
+    /// action gave them; Fenix's result (`{ "entry": ... }` for a capture).
+    pub fn execute(&mut self, method: &str, params: &Value) -> Result<Value, String> {
         available(method, Some(&self.link))?;
         self.client
             .request::<Value>(method, params.clone())
-            .map(drop)
             .map_err(|e| why(&format!("refused `{method}`"), &e))
     }
 }
@@ -129,48 +159,91 @@ fn why(what: &str, error: &ClientError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fenix_control::protocol::{Call, OpenParams, RpcError};
+    use fenix_control::protocol::{Call, CommandsResult, OpenParams, RpcError, TasksResult};
     use fenix_control::ServerInfo;
     use serde_json::json;
     use std::sync::{Arc, Mutex};
 
-    /// A Fenix's server, as Fenix runs it, with a fake editor behind it
-    /// recording what it was asked; `capabilities` are the methods the
-    /// editor answers (`fenix-control` advertises its own list, so a
-    /// missing one is refused the way an older Fenix would).
+    type Calls = Arc<Mutex<Vec<String>>>;
+
+    /// A Fenix's server, as Fenix runs it (`fenix-control`'s own), with a
+    /// fake editor behind it recording what it was asked. `capabilities`
+    /// is what this Fenix offers: `None` for all of today's, or fewer,
+    /// as an older Fenix would, which the server then refuses itself.
     fn fenix(
-        answer_state: StateResult,
-    ) -> (
-        Session<std::io::PipeReader, std::io::PipeWriter>,
-        Arc<Mutex<Vec<String>>>,
-    ) {
+        state: StateResult,
+        capabilities: Option<&[&str]>,
+    ) -> (Session<std::io::PipeReader, std::io::PipeWriter>, Calls) {
         let (client_read, server_write) = std::io::pipe().unwrap();
         let (server_read, client_write) = std::io::pipe().unwrap();
         let calls = Arc::new(Mutex::new(Vec::new()));
         let seen = Arc::clone(&calls);
+        let mut info = ServerInfo::new("1.1.0", 4242);
+        if let Some(only) = capabilities {
+            info.capabilities = only.iter().map(|c| c.to_string()).collect();
+        }
         std::thread::spawn(move || {
-            let info = ServerInfo {
-                version: "1.1.0".into(),
-                pid: 4242,
-            };
             let _ = fenix_control::serve(server_read, server_write, &info, |call| {
-                let line = match &call {
-                    Call::Open(OpenParams { paths, .. }) => format!(
-                        "open {}",
-                        paths
-                            .iter()
-                            .map(|p| format!("{}:{:?}:{:?}", p.path, p.line, p.column))
-                            .collect::<Vec<_>>()
-                            .join(" ")
+                let (line, answer) = match &call {
+                    Call::Open(OpenParams { paths, .. }) => (
+                        format!(
+                            "open {}",
+                            paths
+                                .iter()
+                                .map(|p| format!("{}:{:?}:{:?}", p.path, p.line, p.column))
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        ),
+                        json!({}),
                     ),
                     Call::OpenProject(p) if p.root == "missing" => {
                         return Err(RpcError::invalid_params("missing isn't a folder"));
                     }
-                    Call::OpenProject(p) => format!("project {}", p.root),
-                    Call::State => "state".into(),
+                    Call::OpenProject(p) => (format!("project {}", p.root), json!({})),
+                    Call::State => ("state".into(), serde_json::to_value(&state).unwrap()),
+                    Call::Commands => (
+                        "commands".into(),
+                        serde_json::to_value(CommandsResult {
+                            commands: vec![
+                                CommandInfo {
+                                    id: "agenda.open".into(),
+                                    description: "Open the agenda".into(),
+                                    keys: Some("SPC a a".into()),
+                                    external: true,
+                                },
+                                CommandInfo {
+                                    id: "file.save".into(),
+                                    description: "Save the file".into(),
+                                    keys: None,
+                                    external: false,
+                                },
+                            ],
+                        })
+                        .unwrap(),
+                    ),
+                    Call::AgendaTasks(p) => (
+                        format!("tasks {:?}", p.status),
+                        serde_json::to_value(TasksResult {
+                            tasks: vec![AgendaTask {
+                                id: 7,
+                                title: "Review telemetry".into(),
+                                status: TaskStatus::InProgress,
+                                jira_key: Some("OPS-12".into()),
+                                elapsed_minutes: 95,
+                            }],
+                        })
+                        .unwrap(),
+                    ),
+                    Call::NotebookCapture(p) => (
+                        format!("capture {}", p.text),
+                        json!({"entry": "C:\\notes\\Inbox.md"}),
+                    ),
+                    Call::AgendaClockIn(p) => (format!("clock in {}", p.task_id), json!({})),
+                    Call::AgendaClockOut => ("clock out".into(), json!({})),
+                    Call::RunCommand(p) => (format!("run {}", p.id), json!({})),
                 };
                 seen.lock().unwrap().push(line);
-                Ok(serde_json::to_value(&answer_state).unwrap())
+                Ok(answer)
             });
         });
         (hello(client_read, client_write).unwrap(), calls)
@@ -178,17 +251,22 @@ mod tests {
 
     #[test]
     fn hello_reports_version_pid_and_capabilities() {
-        let (session, _) = fenix(StateResult::default());
+        let (session, _) = fenix(StateResult::default(), None);
         assert_eq!(session.link.version, "1.1.0");
         assert_eq!(session.link.pid, 4242);
-        assert!(session.link.can("fenix/open"));
-        assert!(session.link.can("fenix/openProject"));
-        assert!(!session.link.can("fenix/commands"));
+        for method in [
+            "fenix/open",
+            "fenix/openProject",
+            "fenix/commands",
+            "fenix/agenda.clockIn",
+        ] {
+            assert!(session.link.can(method), "{method}");
+        }
     }
 
     #[test]
     fn opening_files_at_a_position_and_projects_reach_the_editor() {
-        let (mut session, calls) = fenix(StateResult::default());
+        let (mut session, calls) = fenix(StateResult::default(), None);
         session
             .execute(
                 "fenix/open",
@@ -212,21 +290,71 @@ mod tests {
     }
 
     #[test]
-    fn state_says_what_fenix_shows() {
+    fn state_says_what_fenix_shows_and_the_running_clock() {
         let shown = StateResult {
             project: Some("C:\\src\\fenix".into()),
             file: Some("C:\\src\\fenix\\Cargo.toml".into()),
             line: Some(3),
+            agenda_timer: Some(AgendaTimer {
+                task_id: 7,
+                title: "Review telemetry".into(),
+                since: "2026-10-13T09:00:00Z".into(),
+            }),
         };
-        let (mut session, _) = fenix(shown.clone());
+        let (mut session, _) = fenix(shown.clone(), None);
         assert_eq!(session.state().unwrap(), shown);
     }
 
     #[test]
-    fn what_fenix_doesnt_offer_is_disabled_with_the_reason() {
-        let (mut session, calls) = fenix(StateResult::default());
+    fn commands_are_the_external_ones_and_tasks_the_open_ones() {
+        let (mut session, calls) = fenix(StateResult::default(), None);
+        let commands = session.commands().unwrap();
+        assert_eq!(commands.len(), 1, "file.save can't be run from outside");
+        assert_eq!(commands[0].keys.as_deref(), Some("SPC a a"));
+        let tasks = session.open_tasks().unwrap();
+        assert_eq!(tasks[0].id, 7);
+        assert_eq!(
+            calls.lock().unwrap()[1],
+            "tasks Some([InProgress, Todo, Blocked])",
+            "done tasks aren't asked for"
+        );
+    }
+
+    #[test]
+    fn capture_clock_and_commands_go_through_execute() {
+        let (mut session, calls) = fenix(StateResult::default(), None);
+        let captured = session
+            .execute("fenix/notebook.capture", &json!({"text": "buy film"}))
+            .unwrap();
+        assert_eq!(captured["entry"], "C:\\notes\\Inbox.md");
+        session
+            .execute("fenix/agenda.clockIn", &json!({"taskId": 7}))
+            .unwrap();
+        session
+            .execute("fenix/agenda.clockOut", &json!({}))
+            .unwrap();
+        session
+            .execute("fenix/runCommand", &json!({"id": "agenda.open"}))
+            .unwrap();
+        assert_eq!(
+            *calls.lock().unwrap(),
+            [
+                "capture buy film",
+                "clock in 7",
+                "clock out",
+                "run agenda.open"
+            ]
+        );
+    }
+
+    #[test]
+    fn an_older_fenix_lists_and_does_less_and_flint_says_why() {
+        let only: &[&str] = &["fenix/open", "fenix/openProject", "fenix/state"];
+        let (mut session, calls) = fenix(StateResult::default(), Some(only));
+        assert!(session.commands().unwrap().is_empty());
+        assert!(session.open_tasks().unwrap().is_empty());
         let err = session
-            .execute("fenix/agenda.clockIn", &json!({"taskId": "t1"}))
+            .execute("fenix/agenda.clockIn", &json!({"taskId": 7}))
             .unwrap_err();
         assert_eq!(
             err,
@@ -239,7 +367,7 @@ mod tests {
     fn without_fenix_running_only_what_can_start_it_is_offered() {
         assert!(available("fenix/open", None).is_ok());
         assert!(available("fenix/openProject", None).is_ok());
-        let err = available("fenix/commands", None).unwrap_err();
-        assert!(err.contains("Fenix doesn't yet"), "{err}");
+        let err = available("fenix/notebook.capture", None).unwrap_err();
+        assert!(err.contains("needs Fenix running"), "{err}");
     }
 }

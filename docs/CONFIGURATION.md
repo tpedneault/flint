@@ -142,8 +142,9 @@ line for you. A URL without `{query}` simply opens.
 
 - `keyword` must be one word, unique among your links (and is what a
   leader binding names: `scope:quicklink.j`). `a`, `p`, `f`, `w`, `=`,
-  `>` and `flint` belong to Flint's Apps, Fenix projects, Fenix recent
-  files, windows, calculator, shell and commands; a link that names one
+  `>`, `:`, `t`, `n` and `flint` belong to Flint's Apps, Fenix projects,
+  Fenix recent files, windows, calculator, shell, Fenix commands, the
+  agenda, notebook capture and Flint's commands; a link that names one
   keeps working by name, and `flint status` says why its keyword doesn't.
 - `url` needs a scheme (`https:`, `mailto:`, …).
 - A bad entry is skipped with its reason; the others still work.
@@ -211,9 +212,9 @@ to actions:
 
 | Action | Does |
 |---|---|
-| `scope:<provider>` | limits the query to `apps`, `flint`, `fenix.projects`, `fenix.recent`, `windows`, `calculator`, `shell`, an external provider's name or `quicklink.<keyword>`, and goes to Insert mode |
+| `scope:<provider>` | limits the query to `apps`, `flint`, `fenix.projects`, `fenix.recent`, `fenix.commands`, `fenix.agenda`, `fenix.capture`, `windows`, `calculator`, `shell`, an external provider's name or `quicklink.<keyword>`, and goes to Insert mode |
 | `flint:<command>` | runs `reload`, `settings`, `log` or `quit` |
-| `fenix:<command>` | runs a Fenix command, once Fenix offers its commands to other programs (it says so until then) |
+| `fenix:<command>` | runs a Fenix command by its id (`fenix:agenda.toggle_clock`), one Fenix lets other programs run (`: ` lists them); it says why when Fenix isn't running or won't |
 | `query:<text>` | replaces the query line with `text` |
 
 A table adds a label (`{ action = "flint:reload", label = "Reload" }`);

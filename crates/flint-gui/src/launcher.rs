@@ -353,6 +353,11 @@ impl Launcher {
         self.message = Some(message);
     }
 
+    /// Takes the message down: what it said stopped being true.
+    pub fn clear_message(&mut self) {
+        self.message = None;
+    }
+
     /// Starts afresh for a show: Insert mode, the given query, no scope, no
     /// message. Rows stay until the daemon's new results replace them.
     pub fn reset(&mut self, query: Option<String>) {

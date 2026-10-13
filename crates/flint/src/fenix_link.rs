@@ -10,8 +10,10 @@
 //! restarting).
 //!
 //! - A *look*, before each show: is a Fenix answering, what can it do,
-//!   and (when Fenix is the window in front) what it is showing, for the
-//!   context sent with queries.
+//!   what it is showing (for the context sent with queries, and the
+//!   agenda's running clock), and, when it offers them, its commands and
+//!   the agenda's open tasks. A few small requests to a local pipe, off
+//!   the event loop, so the lists are as fresh as the show.
 //! - A *run*: one Fenix action. With a Fenix answering, Flint grants it
 //!   the foreground (Windows: Flint is the foreground process while the
 //!   user picks a row, so it may) and sends the request; with none, it
@@ -19,18 +21,15 @@
 
 use std::sync::mpsc::{self, Sender};
 
-use flint_fenix::control::{self, Link, StateResult};
+use flint_fenix::control::{self, AgendaTask, CommandInfo, Link, StateResult};
 use flint_fenix::handoff;
 use serde_json::Value;
 
 /// Work for the Fenix thread.
 pub enum Job {
-    /// Find out whether a Fenix answers and what it can do; with `state`,
-    /// also what it shows.
-    Look {
-        /// Ask `fenix/state` too.
-        state: bool,
-    },
+    /// Find out whether a Fenix answers, what it can do and shows, and
+    /// its commands and open tasks.
+    Look,
     /// Carry out one Fenix action.
     Run {
         /// To match the answer to the request.
@@ -46,22 +45,27 @@ pub enum Job {
 
 /// What came back.
 pub enum Done {
-    /// A look: the Fenix answering (`None`: none), what it shows when
-    /// asked, and what went wrong talking to one that is there.
+    /// A look: the Fenix answering (`None`: none), what it shows, its
+    /// commands and open tasks, and what went wrong talking to one that
+    /// is there.
     Looked {
         /// Its hello.
         link: Option<Link>,
-        /// `fenix/state`, when asked and answered.
+        /// `fenix/state`, when answered.
         state: Option<StateResult>,
-        /// A Fenix was there but the exchange failed.
+        /// Its external commands (empty when it doesn't list them).
+        commands: Vec<CommandInfo>,
+        /// The agenda's open tasks (empty when it doesn't list them).
+        tasks: Vec<AgendaTask>,
+        /// A Fenix was there but an exchange failed.
         problem: Option<String>,
     },
     /// A run finished.
     Ran {
         /// The request's token.
         token: u64,
-        /// What happened, as one footer line on failure.
-        result: Result<(), String>,
+        /// Fenix's result, or one footer line on failure.
+        result: Result<Value, String>,
         /// The Fenix that carried it out, if one answered.
         link: Option<Link>,
     },
@@ -75,7 +79,7 @@ pub fn start(send: impl Fn(Done) + Send + 'static) -> Result<Sender<Job>, String
         .spawn(move || {
             for job in queue {
                 send(match job {
-                    Job::Look { state } => look(state),
+                    Job::Look => look(),
                     Job::Run {
                         token,
                         method,
@@ -96,35 +100,51 @@ pub fn start(send: impl Fn(Done) + Send + 'static) -> Result<Sender<Job>, String
         .map_err(|e| format!("no thread to talk to Fenix with: {e}"))
 }
 
-fn look(want_state: bool) -> Done {
-    let looked = |link, state, problem| Done::Looked {
-        link,
-        state,
+fn look() -> Done {
+    let nobody = |problem| Done::Looked {
+        link: None,
+        state: None,
+        commands: Vec::new(),
+        tasks: Vec::new(),
         problem,
     };
     let (reader, writer) = match flint_platform::fenix::connect() {
         Ok(Some(connection)) => connection,
-        Ok(None) => return looked(None, None, None),
-        Err(e) => return looked(None, None, Some(format!("couldn't reach Fenix: {e}"))),
+        Ok(None) => return nobody(None),
+        Err(e) => return nobody(Some(format!("couldn't reach Fenix: {e}"))),
     };
     let mut session = match control::hello(reader, writer) {
         Ok(session) => session,
-        Err(why) => return looked(None, None, Some(why)),
+        Err(why) => return nobody(Some(why)),
     };
-    if !want_state {
-        return looked(Some(session.link), None, None);
-    }
-    match session.state() {
-        Ok(state) => looked(Some(session.link), Some(state), None),
-        Err(why) => looked(Some(session.link), None, Some(why)),
+    // Each part on its own: one that fails costs only itself.
+    let mut problems = Vec::new();
+    let state = session.state().map_err(|e| problems.push(e)).ok();
+    let commands = session.commands().unwrap_or_else(|e| {
+        problems.push(e);
+        Vec::new()
+    });
+    let tasks = session.open_tasks().unwrap_or_else(|e| {
+        problems.push(e);
+        Vec::new()
+    });
+    Done::Looked {
+        link: Some(session.link),
+        state,
+        commands,
+        tasks,
+        problem: (!problems.is_empty()).then(|| problems.join("; ")),
     }
 }
 
-fn run(method: &str, params: &Value, executable: &str) -> (Result<(), String>, Option<Link>) {
+fn run(method: &str, params: &Value, executable: &str) -> (Result<Value, String>, Option<Link>) {
     let (reader, writer) = match flint_platform::fenix::connect() {
         Ok(Some(connection)) => connection,
         // No Fenix answering: start one with the request.
-        Ok(None) => return (handoff::start(method, params, executable), None),
+        Ok(None) => {
+            let started = handoff::start(method, params, executable);
+            return (started.map(|()| Value::Null), None);
+        }
         Err(e) => return (Err(format!("couldn't reach Fenix: {e}")), None),
     };
     let mut session = match control::hello(reader, writer) {
