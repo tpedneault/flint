@@ -1,9 +1,12 @@
-//! The colours Flint draws with: Fenix's eight themes.
+//! The colours Flint draws with: Fenix's twelve themes.
 //!
 //! Fenix's palettes live in `fenix-gui`, built from `glyphon` types, so
 //! Flint can't depend on them; it copies the handful of colours it needs
 //! from each, from `crates/fenix-gui/src/theme.rs` at Fenix
-//! `f05780740b7d45e41eedc35b846dba7c832f4d49`. Which one is used follows
+//! `f05780740b7d45e41eedc35b846dba7c832f4d49`, and the four Catppuccin
+//! flavours at Fenix `d821a0bba27fe0f44085f5b0d0d79de21f7a746d`.
+//! `accent` is Fenix's `caret_text` for those: Latte's caret is a light
+//! rosewater that only reads as a block, and Flint draws `accent` as text. Which one is used follows
 //! Fenix's `editor.theme` unless `appearance.theme` pins one (the daemon
 //! decides; this module only names them). F9 in FENIX-INTEGRATION.md would
 //! replace the copy with a shared `fenix-theme` crate.
@@ -200,8 +203,79 @@ pub const VISUAL_STUDIO_DARK: Palette = Palette {
     chip: rgba(0xdcdcaa),
 };
 
+/// Catppuccin Latte. Its accents darkened as Fenix's are, so they read on the light page.
+pub const CATPPUCCIN_LATTE: Palette = Palette {
+    name: "Catppuccin Latte",
+    font_family: None,
+    background: rgba(0xeff1f5),
+    surface: rgba(0xe6e9ef),
+    foreground: rgba(0x4c4f69),
+    muted: rgba(0x5e606c),
+    accent: rgba(0x865449),
+    selection: rgba_alpha(0x7c7f93, 0.25),
+    border: rgba(0xd9dce4),
+    error: rgba(0xc10e34),
+    mode_insert: rgba(0x327d22),
+    mode_normal: rgba(0x1d63ee),
+    badge_text: rgba(0xeff1f5),
+    chip: rgba(0x1a58d3),
+};
+
+/// Catppuccin Frappé.
+pub const CATPPUCCIN_FRAPPE: Palette = Palette {
+    name: "Catppuccin Frappé",
+    font_family: None,
+    background: rgba(0x303446),
+    surface: rgba(0x292c3c),
+    foreground: rgba(0xc6d0f5),
+    muted: rgba(0xa6abc0),
+    accent: rgba(0xf2d5cf),
+    selection: rgba_alpha(0x949cbb, 0.25),
+    border: rgba(0x3b3f52),
+    error: rgba(0xea9395),
+    mode_insert: rgba(0xa6d189),
+    mode_normal: rgba(0x8caaee),
+    badge_text: rgba(0x232634),
+    chip: rgba(0x8caaee),
+};
+
+/// Catppuccin Macchiato.
+pub const CATPPUCCIN_MACCHIATO: Palette = Palette {
+    name: "Catppuccin Macchiato",
+    font_family: None,
+    background: rgba(0x24273a),
+    surface: rgba(0x1e2030),
+    foreground: rgba(0xcad3f5),
+    muted: rgba(0x979db3),
+    accent: rgba(0xf4dbd6),
+    selection: rgba_alpha(0x939ab7, 0.25),
+    border: rgba(0x303347),
+    error: rgba(0xed8796),
+    mode_insert: rgba(0xa6da95),
+    mode_normal: rgba(0x8aadf4),
+    badge_text: rgba(0x181926),
+    chip: rgba(0x8aadf4),
+};
+
+/// Catppuccin Mocha.
+pub const CATPPUCCIN_MOCHA: Palette = Palette {
+    name: "Catppuccin Mocha",
+    font_family: None,
+    background: rgba(0x1e1e2e),
+    surface: rgba(0x181825),
+    foreground: rgba(0xcdd6f4),
+    muted: rgba(0x9195aa),
+    accent: rgba(0xf5e0dc),
+    selection: rgba_alpha(0x9399b2, 0.25),
+    border: rgba(0x2a2b3c),
+    error: rgba(0xf38ba8),
+    mode_insert: rgba(0xa6e3a1),
+    mode_normal: rgba(0x89b4fa),
+    badge_text: rgba(0x11111b),
+    chip: rgba(0x89b4fa),
+};
 /// Every theme, in Fenix's `theme::ALL` order.
-pub const ALL: [&Palette; 8] = [
+pub const ALL: [&Palette; 12] = [
     &ORBIT_DARK,
     &TEMPLEOS,
     &GRUVBOX_DARK,
@@ -210,6 +284,10 @@ pub const ALL: [&Palette; 8] = [
     &SOLARIZED_DARK,
     &ONE_DARK,
     &VISUAL_STUDIO_DARK,
+    &CATPPUCCIN_LATTE,
+    &CATPPUCCIN_FRAPPE,
+    &CATPPUCCIN_MACCHIATO,
+    &CATPPUCCIN_MOCHA,
 ];
 
 /// The theme called `name`, in any case, as Fenix looks themes up.

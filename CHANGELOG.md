@@ -106,6 +106,9 @@ All notable changes to Flint are recorded here. The format follows
   runs one; `t ` lists the agenda's open tasks, `Enter` clocking in (or
   out); `n <text>` captures a note into the Inbox or today's journal.
   `fenix:<command>` leader bindings now run.
+- Catppuccin themes: `appearance.theme` takes `Catppuccin Latte`,
+  `Catppuccin Frappé`, `Catppuccin Macchiato` and `Catppuccin Mocha`, and
+  following Fenix picks them up when Fenix uses one.
 
 ### Changed
 
