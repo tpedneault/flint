@@ -35,11 +35,11 @@ pub use chord::{Chord, Key};
 pub use leader::LeaderBinding;
 pub use paths::Folders;
 
-/// `appearance.theme`'s choices: `fenix` (follow Fenix), then the eight
+/// `appearance.theme`'s choices: `fenix` (follow Fenix), then the twelve
 /// themes Fenix has at the pinned revision, by `fenix-gui`'s
 /// `theme::ALL`. `flint-gui` carries their colours, and a test there
 /// checks it has exactly these.
-pub const THEMES: [&str; 9] = [
+pub const THEMES: [&str; 13] = [
     "fenix",
     "Orbit Dark",
     "TempleOS",
@@ -49,6 +49,10 @@ pub const THEMES: [&str; 9] = [
     "Solarized Dark",
     "One Dark",
     "Visual Studio Dark",
+    "Catppuccin Latte",
+    "Catppuccin Frappé",
+    "Catppuccin Macchiato",
+    "Catppuccin Mocha",
 ];
 
 /// Every setting's value, after checking.

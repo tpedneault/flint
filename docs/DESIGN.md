@@ -235,12 +235,14 @@ any theme name pins one.
 
 Fenix's palettes live in `fenix-gui` and are built from `glyphon` types, so
 Flint cannot depend on them. Until Fenix extracts them (F9), Flint carries
-a copy of the eight palettes' handful of colours it needs (background,
+a copy of the twelve palettes' handful of colours it needs (background,
 foreground, accent, selection, muted text, border), in one file with a
 comment naming the Fenix revision they were copied from and a test that
 the set of names matches Fenix's `theme::ALL` list in this document:
 Orbit Dark, TempleOS, Gruvbox Dark, Nord, Dracula, Solarized Dark,
-One Dark, Visual Studio Dark. An unknown name falls back to Orbit Dark.
+One Dark, Visual Studio Dark, Catppuccin Latte, Catppuccin Frappé,
+Catppuccin Macchiato, Catppuccin Mocha. An unknown name falls back to
+Orbit Dark.
 
 ## Ranking
 
