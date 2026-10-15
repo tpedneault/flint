@@ -297,6 +297,20 @@ pub fn by_name(name: &str) -> Option<&'static Palette> {
         .copied()
 }
 
+/// The font family to draw in: `setting` (`appearance.font`) when it
+/// names one, else Fenix's `editor.font_family` (only passed while
+/// following Fenix), else the theme's own. `None` leaves it to the
+/// system's monospace font. Flint's own setting wins over Fenix's so a
+/// launcher font can differ from the editor's without pinning a theme.
+pub fn font(setting: &str, fenix: Option<String>, palette: &Palette) -> Option<String> {
+    let setting = setting.trim();
+    if setting.is_empty() {
+        fenix.or(palette.font_family.map(str::to_owned))
+    } else {
+        Some(setting.to_owned())
+    }
+}
+
 /// Converts a palette colour for glyphon.
 pub fn text_color(c: [f32; 4]) -> glyphon::Color {
     let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -311,6 +325,19 @@ mod tests {
     fn hex_survives_the_round_trip_to_glyphon() {
         let c = text_color(ORBIT_DARK.foreground);
         assert_eq!((c.r(), c.g(), c.b(), c.a()), (0xc0, 0xca, 0xf5, 0xff));
+    }
+
+    #[test]
+    fn the_font_setting_wins_then_fenix_then_the_theme() {
+        let vs = &VISUAL_STUDIO_DARK;
+        let fenix = || Some("Iosevka".to_owned());
+        assert_eq!(
+            font(" Cascadia Mono ", fenix(), vs).as_deref(),
+            Some("Cascadia Mono")
+        );
+        assert_eq!(font("", fenix(), vs).as_deref(), Some("Iosevka"));
+        assert_eq!(font("", None, vs).as_deref(), Some("Consolas"));
+        assert_eq!(font("  ", None, &NORD), None);
     }
 
     #[test]

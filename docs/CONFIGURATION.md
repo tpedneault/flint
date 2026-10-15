@@ -54,6 +54,7 @@ rows = 7
 
 [appearance]
 theme = "fenix"            # or "Nord", "Dracula", ...
+font = "Cascadia Mono"     # empty or absent: Fenix's font, else the theme's
 
 [behaviour]
 hide_on_blur = true
@@ -96,6 +97,7 @@ it is out of date.
 | `appearance.width` | a whole number, 400–2000 | `720` | The window's width, in logical pixels (scaled with the display). |
 | `appearance.rows` | a whole number, 1–30 | `9` | How many results are shown at once; the window's height follows. |
 | `appearance.theme` | one of `"fenix"`, `"Orbit Dark"`, `"TempleOS"`, `"Gruvbox Dark"`, `"Nord"`, `"Dracula"`, `"Solarized Dark"`, `"One Dark"`, `"Visual Studio Dark"`, `"Catppuccin Latte"`, `"Catppuccin Frappé"`, `"Catppuccin Macchiato"`, `"Catppuccin Mocha"` | `"fenix"` | The colours. `fenix` follows Fenix's `editor.theme` (and `editor.font_family`), changing when Fenix's does; a theme's name pins it. Orbit Dark when Fenix isn't installed or names a theme Flint doesn't have. |
+| `appearance.font` | text | `""` | The font family (`"Cascadia Mono"`, `"JetBrains Mono"`), whatever the theme. Empty: Fenix's `editor.font_family` while following Fenix, else the theme's own, else the system's monospace font. A font that isn't installed falls back to the system's monospace font. |
 | `behaviour.hide_on_blur` | `true` or `false` | `true` | Hide Flint when it loses focus, as when you click another window. |
 | `behaviour.escape_hides` | `true` or `false` | `false` | Make `Esc` hide Flint from either mode, as Raycast does. By default `Esc` in Insert mode goes to Normal mode, where a second `Esc` (or `q`) hides. |
 | `fenix.executable` | text | `""` | The `fenix` program Flint starts when no Fenix is running to ask (a running one is reached over its control channel). Empty: `fenix` on the `PATH`, else beside the `flint` program. |
@@ -111,8 +113,9 @@ Fenix uses (`editor.theme` in Fenix's `settings.toml`) and in Fenix's font
 (`editor.font_family`, else the theme's own, as Fenix does). When you
 change either in Fenix, Flint picks it up the next time it is shown. Name
 a theme instead (`"Nord"`) to pin it; `flint status` says which theme is
-in use and why. A font that isn't installed falls back to the system's
-monospace font.
+in use and why. `appearance.font` sets a font of Flint's own, which wins
+over Fenix's and the theme's. A font that isn't installed falls back to
+the system's monospace font.
 
 Flint reads only those two keys from Fenix's settings, and never writes
 Fenix's files. Fenix's folders are found the way Fenix finds them,
