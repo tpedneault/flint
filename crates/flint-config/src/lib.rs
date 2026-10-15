@@ -70,6 +70,8 @@ pub struct Settings {
     pub escape_hides: bool,
     /// `appearance.theme`: `fenix`, or one of [`THEMES`], as listed there.
     pub theme: String,
+    /// `appearance.font`; empty to take Fenix's, else the theme's.
+    pub font: String,
     /// `fenix.executable`; empty to look for it.
     pub fenix_executable: String,
     /// `shell.program`; empty for the platform's default shell.
@@ -138,6 +140,7 @@ impl Default for Settings {
             hide_on_blur: true,
             escape_hides: false,
             theme: "fenix".to_owned(),
+            font: String::new(),
             fenix_executable: String::new(),
             shell_program: String::new(),
             quicklinks: Vec::new(),

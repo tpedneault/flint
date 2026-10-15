@@ -453,10 +453,15 @@ impl Daemon {
     /// says `fenix`. Unless `force`, does nothing when Fenix's settings
     /// haven't changed (one `stat`), so it can run before every show.
     fn follow_look(&mut self, ui: &mut Ui<'_>, force: bool) {
-        let setting = self
-            .core
-            .as_ref()
-            .map_or_else(|| "fenix".to_owned(), |c| c.loaded.settings.theme.clone());
+        let (setting, font_setting) = self.core.as_ref().map_or_else(
+            || ("fenix".to_owned(), String::new()),
+            |c| {
+                (
+                    c.loaded.settings.theme.clone(),
+                    c.loaded.settings.font.clone(),
+                )
+            },
+        );
         let following = setting == "fenix";
         let fenix_changed = following && self.fenix_look.changed();
         if !force && !fenix_changed {
@@ -480,9 +485,7 @@ impl Daemon {
                 "set in settings.toml".to_owned(),
             )
         };
-        let font = fenix_look
-            .font_family
-            .or(palette.font_family.map(str::to_owned));
+        let font = theme::font(&font_setting, fenix_look.font_family, palette);
         let used = ui.set_appearance(*palette, font);
         let appearance = (format!("{} ({why})", palette.name), used);
         if self.appearance.as_ref() != Some(&appearance) {

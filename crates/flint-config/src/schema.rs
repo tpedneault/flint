@@ -188,6 +188,19 @@ pub static SETTINGS: &[Setting] = &[
         },
     },
     Setting {
+        key: "appearance.font",
+        kind: Kind::Text,
+        default: "\"\"",
+        help: "The font family (`\"Cascadia Mono\"`, `\"JetBrains Mono\"`), whatever the \
+               theme. Empty: Fenix's `editor.font_family` while following Fenix, else the \
+               theme's own, else the system's monospace font. A font that isn't installed \
+               falls back to the system's monospace font.",
+        apply: |s, v| {
+            s.font = v.as_str().unwrap_or_default().trim().to_owned();
+            Ok(vec![])
+        },
+    },
+    Setting {
         key: "behaviour.hide_on_blur",
         kind: Kind::Bool,
         default: "true",
