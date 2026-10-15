@@ -109,6 +109,9 @@ All notable changes to Flint are recorded here. The format follows
 - Catppuccin themes: `appearance.theme` takes `Catppuccin Latte`,
   `Catppuccin Frappé`, `Catppuccin Macchiato` and `Catppuccin Mocha`, and
   following Fenix picks them up when Fenix uses one.
+- `appearance.font`: a font of Flint's own, whatever the theme. Empty
+  (the default) keeps today's choice: Fenix's `editor.font_family` while
+  following Fenix, else the theme's.
 
 ### Changed
 
